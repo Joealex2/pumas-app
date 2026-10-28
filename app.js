@@ -1,6 +1,6 @@
 // Funciones utilitarias
 const $ = (id) => document.getElementById(id);
-const STORAGE_KEY = "losPumas_VFinal_V3";
+const STORAGE_KEY = "losPumas_VFinal_V4";
 const defaultTariffs = { normal: 25, late: 30, matricula: 15, implements: 0, uniform: 0, other: 0 };
 const defaultAuth = { user: "Galo", pass: "17021975" };
 
@@ -55,7 +55,7 @@ function showView(name) {
     if (b.dataset.view) b.classList.toggle("active", b.dataset.view === name);
   });
   if (name === "payment") resetPaymentFormToNew();
-  if (name === "history") renderHistory();
+  if (name === "history") { populateHistoryStudentFilter(); renderHistory(); }
   if (name === "tariffs") fillTariffs();
 }
 
@@ -600,21 +600,35 @@ function sendWhatsappMessage(p) {
   window.open(waUrl, "_blank", "noopener");
 }
 
-// --- HISTORIAL ---
-["historyMonth", "historyConcept", "historyStatus"].forEach(id => {
+// --- HISTORIAL Y FILTROS ---
+function populateHistoryStudentFilter() {
+  const sel = $("historyStudentFilter");
+  if (!sel) return;
+  const currentVal = sel.value;
+  sel.innerHTML = '<option value="all">Todos los alumnos</option>' + 
+    data.students.map(s => `<option value="${s.id}">${esc(s.names)} ${esc(s.last)} (${esc(s.cedula)})</option>`).join("");
+  sel.value = currentVal;
+}
+
+["historyMonth", "historyConcept", "historyStatus", "historyStudentFilter"].forEach(id => {
   $(id)?.addEventListener("change", renderHistory);
 });
 if ($("historyMonth")) $("historyMonth").value = today().slice(0, 7);
 
 function renderHistory() {
   if (!$("historyList")) return;
-  const month = $("historyMonth")?.value, concept = $("historyConcept")?.value, status = $("historyStatus")?.value;
+  const month = $("historyMonth")?.value;
+  const concept = $("historyConcept")?.value;
+  const status = $("historyStatus")?.value;
+  const studentFilter = $("historyStudentFilter")?.value || "all";
+
   let arr = data.abonos.map(ab => getJoinedReceipt(ab)).filter(p => {
     if (month && !(p.recordDate || "").startsWith(month)) return false;
     if (concept && concept !== "all" && p.concept !== concept) return false;
     if (status === "paid" && p.balance > 0) return false;
     if (status === "partial" && !(p.amount > 0 && p.balance > 0)) return false;
     if (status === "pending" && p.balance <= 0) return false;
+    if (studentFilter !== "all" && p.studentId !== studentFilter) return false;
     return true;
   }).sort((a, b) => (b.recordDate || "").localeCompare(a.recordDate || ""));
 
@@ -627,10 +641,45 @@ function renderHistory() {
 
   if (!arr.length) { $("historyList").innerHTML = '<div class="empty-state" style="padding:20px;text-align:center;color:var(--muted);">No hay movimientos registrados.</div>'; return; }
 
-  $("historyList").innerHTML = `<table style="min-width: 680px;"><thead><tr><th>Fecha</th><th>Recibo</th><th>Alumno</th><th>Concepto</th><th>Total a pagar</th><th>Abono</th><th>Saldo</th><th>Recibo</th></tr></thead><tbody>${arr.map(p => `<tr><td>${esc(p.recordDate)}</td><td>${esc(p.receipt)}</td><td><b>${esc(p.studentName)}</b></td><td>${esc(p.concept)}</td><td>${money(p.total)}</td><td>${money(p.amount)}</td><td>${money(p.balance)}</td><td><button class="mini-btn red" data-receipt="${p.receipt}">Ver PDF</button></td></tr>`).join("")}</tbody></table>`;
+  $("historyList").innerHTML = `<table style="min-width: 750px;"><thead><tr><th>Fecha</th><th>Recibo</th><th>Alumno</th><th>Concepto</th><th>Abono</th><th>Saldo</th><th>Acciones</th></tr></thead><tbody>${arr.map(p => `<tr>
+    <td>${esc(p.recordDate)}</td>
+    <td>${esc(p.receipt)}</td>
+    <td><b>${esc(p.studentName)}</b></td>
+    <td>${esc(p.concept)}</td>
+    <td>${money(p.amount)}</td>
+    <td>${money(p.balance)}</td>
+    <td>
+      <div style="display:flex; gap:6px;">
+        <button class="mini-btn red" data-receipt="${p.receipt}">Ver PDF</button>
+        <button class="mini-btn danger" onclick="deleteReceipt('${p.receipt}')">Eliminar</button>
+      </div>
+    </td>
+  </tr>`).join("")}</tbody></table>`;
 
   document.querySelectorAll("[data-receipt]").forEach(b => b.addEventListener("click", () => { const p = arr.find(x => x.receipt === b.dataset.receipt); if (p) renderReceipt(p); showView("payment"); }));
 }
+
+// Función para eliminar un recibo/abono por error y devolver el saldo a la obligación
+window.deleteReceipt = function(receiptNum) {
+  if (!confirm(`¿Estás seguro de eliminar el comprobante ${receiptNum}? Esta acción devolverá el monto abonado a la deuda pendiente.`)) return;
+
+  const abonoIdx = data.abonos.findIndex(a => a.receipt === receiptNum);
+  if (abonoIdx === -1) return;
+
+  const abono = data.abonos[abonoIdx];
+  const obligation = data.obligations.find(o => o.id === abono.obligationId);
+
+  // Revertir saldo en la obligación
+  if (obligation) {
+    obligation.balance = Number((obligation.balance + abono.amount).toFixed(2));
+  }
+
+  // Eliminar el registro de abono
+  data.abonos.splice(abonoIdx, 1);
+  saveData();
+  renderHistory();
+  notice("Comprobante eliminado y saldo restituido correctamente.");
+};
 
 // --- TARIFAS Y SEGURIDAD ---
 function fillTariffs() {
@@ -713,6 +762,7 @@ function renderDashboard() {
 function renderAll() {
   renderDashboard();
   renderStudents();
+  populateHistoryStudentFilter();
   renderHistory();
   if ($("studentId")) $("studentId").value = `LP-${String(data.nextStudent || 1).padStart(4, "0")}`;
   if ($("recordDate") && !$("recordDate").value) $("recordDate").value = today();
