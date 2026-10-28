@@ -1,9 +1,9 @@
-const CACHE_NAME = 'pumas-cache-v3';
+const CACHE_NAME = 'pumas-cache-v4';
 const ASSETS = [
   '/pumas-app/',
   '/pumas-app/index.html',
-  '/pumas-app/styles.css',
-  '/pumas-app/app.js',
+  '/pumas-app/styles.css?v=4',
+  '/pumas-app/app.js?v=4',
   '/pumas-app/manifest.json',
   '/pumas-app/img/Pum.png'
 ];
