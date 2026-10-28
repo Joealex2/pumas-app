@@ -168,11 +168,13 @@
       </section>
 
       <section id="view-history" class="view hidden">
-        <div class="panel"><div class="section-head"><div><h3>Historial de recibos</h3></div></div>
+        <div class="panel">
+          <div class="section-head"><div><h3>Historial de recibos y pagos</h3><p class="muted">Filtra por mes, concepto, estado o busca un alumno específico.</p></div></div>
           <div class="filter-grid">
             <div><label>Mes</label><input id="historyMonth" type="month"></div>
             <div><label>Concepto</label><select id="historyConcept"><option value="all">Todos</option><option>Mensualidad</option><option>Mensualidad + Matrícula</option><option>Implementos deportivos</option><option>Uniformes</option><option>Otros</option></select></div>
             <div><label>Estado deuda</label><select id="historyStatus"><option value="all">Todos</option><option value="paid">Pagados (Saldo $0)</option><option value="partial">Con abonos parciales</option><option value="pending">Deudas pendientes</option></select></div>
+            <div><label>Filtrar por Alumno</label><select id="historyStudentFilter"><option value="all">Todos los alumnos</option></select></div>
           </div>
           <div class="history-totals"><div><span>Recibos</span><b id="historyCount">0</b></div><div><span>Recaudado</span><b id="historyRevenue">$0.00</b></div><div><span>Saldo por cobrar</span><b id="historyBalance">$0.00</b></div></div>
           <div id="historyList" class="table-wrap"></div>
