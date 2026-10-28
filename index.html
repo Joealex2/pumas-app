@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#c7192d">
+  <title>Club Los Pumas | Gestión de pagos</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="manifest" href="manifest.json">
+</head>
+<body>
+  <div id="loginScreen" class="login-wrap">
+    <div class="login-card">
+      <!-- LOGO LOGIN ACTUALIZADO -->
+      <img src="img/Pum.png" alt="Logo Los Pumas" class="logo-img">
+      <p class="eyebrow">CLUB DEPORTIVO FORMATIVO ESPECIALIZADO</p>
+      <h1>LOS PUMAS</h1>
+      <p class="muted">Sistema de gestión de alumnos y pagos</p>
+      <form id="loginForm">
+        <label for="loginUser">Usuario o correo</label>
+        <input id="loginUser" autocomplete="username" required placeholder="Ingresa tu usuario">
+        <label for="loginPass">Contraseña</label>
+        <input id="loginPass" type="password" autocomplete="current-password" required placeholder="Ingresa tu contraseña">
+        <button class="primary full" type="submit">Ingresar</button>
+      </form>
+      <p class="small muted">Modo de demostración: usuario <b>admin</b> y contraseña <b>pumas123</b>.</p>
+    </div>
+  </div>
+
+  <div id="appShell" class="app-shell hidden">
+    <aside class="sidebar">
+      <div class="side-brand">
+        <!-- LOGO SIDEBAR ACTUALIZADO -->
+        <img src="img/Pum.png" alt="Logo" class="logo-img-small">
+        <div><b>LOS PUMAS</b><span>Gestión de pagos</span></div>
+      </div>
+      <nav id="mainNav">
+        <button data-view="dashboard" class="nav-item active">▦ <span>Inicio</span></button>
+        <button data-view="students" class="nav-item">♟ <span>Alumnos</span></button>
+        <button data-view="payment" class="nav-item">＋ <span>Registrar movimiento</span></button>
+        <button data-view="history" class="nav-item">▤ <span>Historiales</span></button>
+        <button data-view="tariffs" class="nav-item">⚙ <span>Tarifas</span></button>
+      </nav>
+      <div class="side-bottom"><span class="status-dot"></span> Prototipo V3<br><button id="logoutBtn" class="logout">Cerrar sesión ↗</button></div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar"><div><p class="eyebrow">CLUB LOS PUMAS · TAEKWONDO</p><h2 id="pageTitle">Inicio</h2></div><div class="user-pill"><span class="avatar">A</span><span>Administrador</span></div></header>
+      <div id="notice" class="notice hidden"></div>
+
+      <section id="view-dashboard" class="view">
+        <!-- Banner fotográfico -->
+        <div class="welcome panel banner-fotografico">
+            <div class="welcome-content">
+                <p class="eyebrow light">CLUB DEPORTIVO LOS PUMAS</p>
+                <h1>¡Bienvenido al panel!</h1>
+                <p>Administra alumnos, controla deudas y genera recibos al instante.</p>
+            </div>
+            <div class="welcome-symbol">🥋</div>
+        </div>
+        <div class="stats-grid">
+          <article class="stat-card"><span class="stat-label">Alumnos registrados</span><strong id="statStudents">0</strong><span class="stat-foot">Activos</span></article>
+          <article class="stat-card"><span class="stat-label">Abonos registrados</span><strong id="statPayments">0</strong><span class="stat-foot">Recibos emitidos</span></article>
+          <article class="stat-card"><span class="stat-label">Recaudación total</span><strong id="statRevenue">$0.00</strong><span class="stat-foot">Ingresos</span></article>
+        </div>
+        <div class="panel"><div class="section-head"><div><h3>Accesos rápidos</h3></div></div><div class="quick-grid"><button class="quick-card" data-go="students"><span class="quick-icon">♟</span><b>Agregar alumno</b></button><button class="quick-card" data-go="payment"><span class="quick-icon">＋</span><b>Registrar cobro</b></button><button class="quick-card" data-go="history"><span class="quick-icon">▤</span><b>Ver historial</b></button><button class="quick-card" data-go="tariffs"><span class="quick-icon">⚙</span><b>Editar tarifas</b></button></div></div>
+      </section>
+
+      <section id="view-students" class="view hidden">
+        <div class="panel">
+          <div class="section-head">
+            <div><h3 id="studentFormTitle">Registro de alumnos</h3><p class="muted">La cédula debe tener 10 dígitos exactos.</p></div>
+          </div>
+          <form id="studentForm" class="form-grid">
+            <div><label for="studentId">ID interno</label><input id="studentId" readonly placeholder="Automático"></div>
+            <div><label for="studentCedula">Cédula *</label><input id="studentCedula" inputmode="numeric" maxlength="10" pattern="[0-9]{10}" required></div>
+            <div><label for="studentNames">Nombres *</label><input id="studentNames" required></div>
+            <div><label for="studentLast">Apellidos *</label><input id="studentLast" required></div>
+            <div><label for="studentRepPhone">Teléfono del representante *</label><input id="studentRepPhone" type="tel" required></div>
+            <div><label for="studentPhone">Teléfono del alumno (opcional)</label><input id="studentPhone" type="tel"></div>
+            <div><label for="studentGroup">Grupo *</label><select id="studentGroup" required><option value="Niños">Niños</option><option value="Jóvenes">Jóvenes</option></select></div>
+            
+            <!-- CAMPO ESTADO -->
+            <div><label for="studentStatus">Estado en la academia *</label><select id="studentStatus" required><option value="Activo">Activo</option><option value="Inactivo">Inactivo</option></select></div>
+            
+            <div class="form-actions span-two">
+                <button class="primary" type="submit" id="studentSubmitBtn">Guardar alumno</button>
+                <button class="secondary hidden" type="button" id="studentCancelEditBtn">Cancelar Edición</button>
+            </div>
+          </form>
+        </div>
+        <div class="panel">
+          <div class="section-head stack-mobile">
+            <div><h3>Lista de alumnos</h3></div>
+            <!-- FILTRO POR ESTADO -->
+            <div style="display: flex; gap: 10px;">
+                <select id="studentFilterStatus" class="search-input" style="width: auto;">
+                    <option value="all">Todos los estados</option>
+                    <option value="Activo" selected>Solo Activos</option>
+                    <option value="Inactivo">Solo Inactivos</option>
+                </select>
+                <input id="studentSearch" class="search-input" placeholder="Buscar...">
+            </div>
+          </div>
+          <div id="studentsList" class="table-wrap"></div>
+        </div>
+      </section>
+
+      <section id="view-payment" class="view hidden">
+        <div class="panel narrow-panel">
+          <div class="section-head"><div><h3>Registrar movimiento (Deuda / Abono)</h3><p class="muted">Busca un alumno para ver sus deudas pendientes o crear una nueva.</p></div></div>
+          
+          <div class="span-two" style="margin-bottom: 20px;">
+            <label for="payStudentSearch">Buscar alumno *</label>
+            <div class="search-dropdown-wrap">
+                <input id="payStudentSearch" placeholder="Escribe cédula, nombre o apellido..." autocomplete="off">
+                <div id="payStudentResults" class="search-results hidden"></div>
+            </div>
+            <div id="payStudentSelected" class="selected-badge hidden">
+                <span id="payStudentName"></span><button type="button" class="mini-btn" id="payStudentClear">Cambiar</button>
+            </div>
+            <input type="hidden" id="payStudentId" required>
+          </div>
+
+          <div id="pendingObligationsWrap" class="hidden" style="margin-bottom: 25px;">
+              <label>Obligaciones pendientes</label>
+              <div id="pendingObligationsList" class="pending-debts"></div>
+          </div>
+
+          <form id="paymentForm" class="form-grid">
+            <div class="span-two" style="border-top: 1px solid var(--line); padding-top: 15px;">
+                <h4 id="formModeLabel" style="margin:0 0 10px; color:var(--red);">Crear nueva obligación y abonar</h4>
+            </div>
+            <input type="hidden" id="payObligationId">
+            <div><label for="payConcept">Concepto *</label><select id="payConcept" required><option value="Mensualidad">Mensualidad</option><option value="Mensualidad + Matrícula">Mensualidad + Matrícula</option><option value="Implementos deportivos">Implementos deportivos</option><option value="Uniformes">Uniformes</option><option value="Otros">Otros</option></select></div>
+            <div id="monthlyTypeWrap"><label for="monthlyType">Tarifa de mensualidad</label><select id="monthlyType"><option value="normal">Normal (hasta el 15)</option><option value="late">Con atraso (desde el 16)</option></select></div>
+            <div><label for="recordDate">Fecha de registro *</label><input id="recordDate" type="date" required></div>
+            <div><label for="payAmount">Importe total de la obligación (Deuda) *</label><input id="payAmount" type="number" min="0" step="0.01" required></div>
+            <div><label for="payAbono">Monto del abono (Lo que paga hoy) *</label><input id="payAbono" type="number" min="0" step="0.01" required></div>
+            <div class="span-two"><label for="payNotes">Detalle (opcional)</label><input id="payNotes"></div>
+            <div class="span-two summary-box"><div><span>Saldo pendiente al guardar</span><strong id="payBalance">$0.00</strong></div></div>
+            <div class="form-actions span-two"><button class="primary" type="submit">Registrar y generar recibo</button><button class="secondary" type="reset">Limpiar formulario</button></div>
+          </form>
+        </div>
+        <div id="receiptResult" class="panel hidden"></div>
+      </section>
+
+      <section id="view-history" class="view hidden">
+        <div class="panel"><div class="section-head"><div><h3>Historial de recibos</h3></div></div>
+          <div class="filter-grid">
+            <div><label>Mes</label><input id="historyMonth" type="month"></div>
+            <div><label>Concepto</label><select id="historyConcept"><option value="all">Todos</option><option>Mensualidad</option><option>Mensualidad + Matrícula</option><option>Implementos deportivos</option><option>Uniformes</option><option>Otros</option></select></div>
+            <div><label>Estado deuda</label><select id="historyStatus"><option value="all">Todos</option><option value="paid">Pagados (Saldo $0)</option><option value="partial">Con abonos parciales</option><option value="pending">Deudas pendientes</option></select></div>
+          </div>
+          <div class="history-totals"><div><span>Recibos</span><b id="historyCount">0</b></div><div><span>Recaudado</span><b id="historyRevenue">$0.00</b></div><div><span>Saldo por cobrar</span><b id="historyBalance">$0.00</b></div></div>
+          <div id="historyList" class="table-wrap"></div>
+        </div>
+      </section>
+
+      <section id="view-tariffs" class="view hidden">
+        <div class="panel"><div class="section-head"><div><h3>Configuración de tarifas base</h3></div></div>
+          <form id="tariffForm" class="form-grid">
+            <div><label for="tariffNormal">Mensualidad normal ($)</label><input id="tariffNormal" type="number" min="0" step="0.01" required></div>
+            <div><label for="tariffLate">Mensualidad con atraso ($)</label><input id="tariffLate" type="number" min="0" step="0.01" required></div>
+            <div><label for="tariffMatricula">Matrícula ($)</label><input id="tariffMatricula" type="number" min="0" step="0.01" required></div>
+            <div><label for="tariffImplements">Implementos deportivos ($)</label><input id="tariffImplements" type="number" min="0" step="0.01" required></div>
+            <div><label for="tariffUniform">Uniformes ($)</label><input id="tariffUniform" type="number" min="0" step="0.01" required></div>
+            <div><label for="tariffOther">Otros ($)</label><input id="tariffOther" type="number" min="0" step="0.01" required></div>
+            <div class="form-actions span-two"><button class="primary" type="submit">Guardar tarifas</button><button class="secondary" type="button" id="resetTariffs">Restablecer valores</button></div>
+          </form>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="app.js"></script>
+  
+  <!-- Motor de la PWA (Service Worker) corregido -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js')
+          .then(registration => console.log('PWA Lista y registrada'))
+          .catch(err => console.log('Error en PWA: ', err));
+      });
+    }
+  </script>
+</body>
+</html>

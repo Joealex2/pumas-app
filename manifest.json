@@ -1,0 +1,9 @@
+{
+  "name": "Club Los Pumas - Gestión V3",
+  "short_name": "Los Pumas",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f5f6f8",
+  "theme_color": "#c7192d",
+  "description": "Prototipo V3"
+}
