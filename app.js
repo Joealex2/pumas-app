@@ -6,17 +6,17 @@ let data = loadData();
 function loadData(){
   let saved;
   try { saved = JSON.parse(localStorage.getItem(STORAGE_KEY)); } catch(e){}
-  if(!saved) return {students:[], obligations:[], abonos:[], tariffs:{...defaultTariffs}, nextStudent:1, nextReceipt:1, nextObligation:1};
+  if(!saved) return {students:[], obligations:[], abonos:[], tariffs:{...defaultTariffs}, auth:{user:"admin", pass:"pumas123"}, nextStudent:1, nextReceipt:1, nextObligation:1};
   if(!saved.obligations) saved.obligations = [];
   if(!saved.abonos) saved.abonos = [];
   if(!saved.tariffs) saved.tariffs = {...defaultTariffs};
+  if(!saved.auth) saved.auth = {user:"Galo", pass:"1712857356"}; // Credenciales iniciales
   
   if(saved.students) {
       saved.students.forEach(s => { if(!s.status) s.status = "Activo"; });
   }
   return saved;
 }
-
 function saveData(){ 
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); 
     renderAll(); 
@@ -43,7 +43,7 @@ $("loginForm")?.addEventListener("submit", e => {
     e.preventDefault();
     const u = $("loginUser")?.value.trim().toLowerCase();
     const p = $("loginPass")?.value.trim();
-    if(u === "admin" && p === "pumas123"){
+    if(u === "Galo" && p === "1712857356"){
         login(); notice("Sesión iniciada.");
     } else {
         notice("Credenciales incorrectas.", true);
@@ -575,6 +575,60 @@ function renderDashboard(){
     if($("statPayments")) $("statPayments").textContent=data.abonos.length; 
     if($("statRevenue")) $("statRevenue").textContent=money(data.abonos.reduce((s,a)=>s+a.amount,0)); 
 }
+// --- CONFIGURACIÓN DE CREDENCIALES ---
+$("authConfigForm")?.addEventListener("submit", e => {
+    e.preventDefault();
+    const newUser = $("cfgUser")?.value.trim();
+    const newPass = $("cfgPass")?.value.trim();
+    
+    if(newUser.length < 3 || newPass.length < 4) {
+        notice("Usuario o contraseña demasiado cortos.", true);
+        return;
+    }
+    
+    data.auth = { user: newUser, pass: newPass };
+    saveData();
+    notice("Credenciales actualizadas correctamente.");
+    $("authConfigForm").reset();
+});
+
+// --- EXPORTAR E IMPORTAR RESPALDO ---
+$("btnExportData")?.addEventListener("click", () => {
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(data, null, 2));
+    const downloadAnchor = document.createElement("a");
+    const dateStr = today();
+    downloadAnchor.setAttribute("href", dataStr);
+    downloadAnchor.setAttribute("download", `Respaldo_ClubLosPumas_${dateStr}.json`);
+    document.body.appendChild(downloadAnchor);
+    downloadAnchor.click();
+    downloadAnchor.remove();
+    notice("Copia de seguridad descargada.");
+});
+
+$("btnImportData")?.addEventListener("change", e => {
+    const file = e.target.files[0];
+    if(!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = function(event) {
+        try {
+            const importedData = JSON.parse(event.target.result);
+            if(importedData.students && importedData.obligations && importedData.abonos) {
+                if(confirm("¿Estás seguro de restaurar este respaldo? Se sobreescribirán los registros actuales.")) {
+                    data = importedData;
+                    saveData();
+                    notice("Datos restaurados correctamente.");
+                    setTimeout(() => location.reload(), 1000);
+                }
+            } else {
+                notice("El archivo no tiene el formato válido del sistema.", true);
+            }
+        } catch(err) {
+            notice("Error al leer el archivo de respaldo.", true);
+        }
+    };
+    reader.readAsText(file);
+});
 function renderAll(){ 
     renderDashboard(); 
     renderStudents(); 
