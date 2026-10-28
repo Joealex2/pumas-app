@@ -1,6 +1,6 @@
 // Funciones utilitarias
 const $ = (id) => document.getElementById(id);
-const STORAGE_KEY = "losPumas_VFinal_V4";
+const STORAGE_KEY = "losPumas_VFinal_V5";
 const defaultTariffs = { normal: 25, late: 30, matricula: 15, implements: 0, uniform: 0, other: 0 };
 const defaultAuth = { user: "Galo", pass: "17021975" };
 
@@ -55,7 +55,7 @@ function showView(name) {
     if (b.dataset.view) b.classList.toggle("active", b.dataset.view === name);
   });
   if (name === "payment") resetPaymentFormToNew();
-  if (name === "history") { populateHistoryStudentFilter(); renderHistory(); }
+  if (name === "history") renderHistory();
   if (name === "tariffs") fillTariffs();
 }
 
@@ -600,17 +600,50 @@ function sendWhatsappMessage(p) {
   window.open(waUrl, "_blank", "noopener");
 }
 
-// --- HISTORIAL Y FILTROS ---
-function populateHistoryStudentFilter() {
-  const sel = $("historyStudentFilter");
-  if (!sel) return;
-  const currentVal = sel.value;
-  sel.innerHTML = '<option value="all">Todos los alumnos</option>' + 
-    data.students.map(s => `<option value="${s.id}">${esc(s.names)} ${esc(s.last)} (${esc(s.cedula)})</option>`).join("");
-  sel.value = currentVal;
+// --- HISTORIAL CON BUSCADOR DE ALUMNO INTERACTIVO ---
+let historySelectedStudentId = "all";
+
+$("historyStudentSearch")?.addEventListener("input", (e) => {
+  const q = e.target.value.toLowerCase().trim(); 
+  const res = $("historyStudentResults");
+  if (q.length < 2) { 
+    res?.classList.add("hidden"); 
+    if (q === "") {
+      historySelectedStudentId = "all";
+      $("historyStudentFilter").value = "all";
+      renderHistory();
+    }
+    return; 
+  }
+  const arr = data.students.filter(s => [s.cedula, s.names, s.last].join(" ").toLowerCase().includes(q));
+  if (res) {
+    res.innerHTML = arr.length ? arr.map(s => `<div class="search-item" data-id="${s.id}"><b>${esc(s.names)} ${esc(s.last)}</b> - ${esc(s.cedula)}</div>`).join("") : '<div class="search-item muted">Sin resultados.</div>';
+    res.querySelectorAll(".search-item[data-id]").forEach(el => el.addEventListener("click", () => selectStudentForHistory(el.dataset.id)));
+    res.classList.remove("hidden");
+  }
+});
+
+function selectStudentForHistory(studentId) {
+  const s = data.students.find(x => x.id === studentId); if (!s) return;
+  historySelectedStudentId = s.id;
+  $("historyStudentFilter").value = s.id;
+  if ($("historyStudentSearch")) $("historyStudentSearch").value = `${s.names} ${s.last} (${s.cedula})`;
+  $("historyStudentResults")?.classList.add("hidden");
+  $("historyStudentSelected")?.classList.remove("hidden");
+  if ($("historyStudentName")) $("historyStudentName").textContent = `${s.names} ${s.last}`;
+  renderHistory();
 }
 
-["historyMonth", "historyConcept", "historyStatus", "historyStudentFilter"].forEach(id => {
+$("historyStudentClear")?.addEventListener("click", () => {
+  historySelectedStudentId = "all";
+  $("historyStudentFilter").value = "all";
+  if ($("historyStudentSearch")) $("historyStudentSearch").value = "";
+  $("historyStudentSearch")?.classList.remove("hidden");
+  $("historyStudentSelected")?.classList.add("hidden");
+  renderHistory();
+});
+
+["historyMonth", "historyConcept", "historyStatus"].forEach(id => {
   $(id)?.addEventListener("change", renderHistory);
 });
 if ($("historyMonth")) $("historyMonth").value = today().slice(0, 7);
@@ -620,7 +653,7 @@ function renderHistory() {
   const month = $("historyMonth")?.value;
   const concept = $("historyConcept")?.value;
   const status = $("historyStatus")?.value;
-  const studentFilter = $("historyStudentFilter")?.value || "all";
+  const studentFilter = historySelectedStudentId;
 
   let arr = data.abonos.map(ab => getJoinedReceipt(ab)).filter(p => {
     if (month && !(p.recordDate || "").startsWith(month)) return false;
@@ -669,12 +702,10 @@ window.deleteReceipt = function(receiptNum) {
   const abono = data.abonos[abonoIdx];
   const obligation = data.obligations.find(o => o.id === abono.obligationId);
 
-  // Revertir saldo en la obligación
   if (obligation) {
     obligation.balance = Number((obligation.balance + abono.amount).toFixed(2));
   }
 
-  // Eliminar el registro de abono
   data.abonos.splice(abonoIdx, 1);
   saveData();
   renderHistory();
@@ -762,7 +793,6 @@ function renderDashboard() {
 function renderAll() {
   renderDashboard();
   renderStudents();
-  populateHistoryStudentFilter();
   renderHistory();
   if ($("studentId")) $("studentId").value = `LP-${String(data.nextStudent || 1).padStart(4, "0")}`;
   if ($("recordDate") && !$("recordDate").value) $("recordDate").value = today();
