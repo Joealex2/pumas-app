@@ -229,20 +229,6 @@ nav#mainNav {
   font-size: 12px;
 }
 
-.logout-pill {
-  background: #fff;
-  border: 1px solid #fed7d7;
-  color: var(--red);
-  padding: 6px 12px;
-  border-radius: 20px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-.logout-pill:hover {
-  background: #fde7e9;
-}
-
 .view {
   padding: 24px;
   max-width: 1200px;
@@ -677,11 +663,6 @@ th {
 
   .user-pill span:not(.avatar) {
     display: none;
-  }
-
-  .logout-pill {
-    padding: 5px 10px;
-    font-size: 12px;
   }
 
   .view {
