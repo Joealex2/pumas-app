@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pumas-final-v5';
+const CACHE_NAME = 'pumas-cache-v7';
 const ASSETS = [
   './',
   './index.html',
@@ -23,8 +23,17 @@ self.addEventListener('activate', event => {
   );
 });
 
+// Network First para desarrollo ágil y fallback a caché para PWA offline
 self.addEventListener('fetch', event => {
   event.respondWith(
-    fetch(event.request).catch(() => caches.match(event.request))
+    fetch(event.request)
+      .then(response => {
+        if (response && response.status === 200 && response.type === 'basic') {
+          const resClone = response.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(event.request, resClone));
+        }
+        return response;
+      })
+      .catch(() => caches.match(event.request))
   );
 });
