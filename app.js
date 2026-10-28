@@ -1,7 +1,7 @@
 const $ = (id) => document.getElementById(id);
-const STORAGE_KEY = "losPumas_VFinal"; // Clave actualizada para refrescar credenciales
+const STORAGE_KEY = "losPumas_VFinal_V2"; // Clave actualizada para refrescar credenciales
 const defaultTariffs = {normal:25, late:30, matricula:15, implements:0, uniform:0, other:0};
-const defaultAuth = {user: "admin", pass: "pumas123"}; // Modifica aquí tus credenciales por defecto si deseas
+const defaultAuth = {user: "Galo", pass: "17021975"}; // Modifica aquí tus credenciales por defecto si deseas
 
 let data = loadData();
 
