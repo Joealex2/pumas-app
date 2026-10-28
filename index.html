@@ -5,13 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#c7192d">
   <title>Club Los Pumas | Gestión de pagos</title>
-  <link rel="stylesheet" href="styles.css">
-  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="/pumas-app/styles.css">
+  <link rel="manifest" href="/pumas-app/manifest.json">
 </head>
 <body>
   <div id="loginScreen" class="login-wrap">
     <div class="login-card">
-      <img src="img/Pum.png" alt="Logo Los Pumas" class="logo-img">
+      <img src="/pumas-app/img/Pum.png" alt="Logo Los Pumas" class="logo-img">
       <p class="eyebrow">CLUB DEPORTIVO FORMATIVO ESPECIALIZADO</p>
       <h1>LOS PUMAS</h1>
       <p class="muted">Sistema de gestión de alumnos y pagos</p>
@@ -32,7 +32,7 @@
   <div id="appShell" class="app-shell hidden">
     <aside class="sidebar">
       <div class="side-brand">
-        <img src="img/Pum.png" alt="Logo" class="logo-img-small">
+        <img src="/pumas-app/img/Pum.png" alt="Logo" class="logo-img-small">
         <div><b>LOS PUMAS</b><span>Gestión de pagos</span></div>
       </div>
       <nav id="mainNav">
@@ -234,14 +234,15 @@
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="app.js"></script>
+  <script src="/pumas-app/app.js"></script>
   
+  <!-- Registro único y oficial del Service Worker -->
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./sw.js')
-          .then(registration => console.log('PWA Lista'))
-          .catch(err => console.log('Error PWA: ', err));
+        navigator.serviceWorker.register('/pumas-app/sw.js', { scope: '/pumas-app/' })
+          .then(reg => console.log('PWA registrada con éxito:', reg.scope))
+          .catch(err => console.log('Error registro PWA:', err));
       });
     }
   </script>
