@@ -1,6 +1,6 @@
 // Funciones utilitarias
 const $ = (id) => document.getElementById(id);
-const STORAGE_KEY = "losPumas_VFinal_V2";
+const STORAGE_KEY = "losPumas_VFinal_V3";
 const defaultTariffs = { normal: 25, late: 30, matricula: 15, implements: 0, uniform: 0, other: 0 };
 const defaultAuth = { user: "Galo", pass: "17021975" };
 
@@ -130,8 +130,6 @@ $("studentForm")?.addEventListener("submit", e => {
       data.students[sIndex].cedula = cedula;
       data.students[sIndex].names = $("studentNames")?.value.trim();
       data.students[sIndex].last = $("studentLast")?.value.trim();
-      data.students[sIndex].repPhone = $("studentRepPhone")?.value.trim();
-      data.students[sIndex].phone = $("studentPhone")?.value.trim();
       data.students[sIndex].group = $("studentGroup")?.value;
       data.students[sIndex].status = $("studentStatus")?.value;
       saveData();
@@ -145,8 +143,6 @@ $("studentForm")?.addEventListener("submit", e => {
       cedula,
       names: $("studentNames")?.value.trim(),
       last: $("studentLast")?.value.trim(),
-      repPhone: $("studentRepPhone")?.value.trim(),
-      phone: $("studentPhone")?.value.trim(),
       group: $("studentGroup")?.value,
       status: $("studentStatus")?.value
     };
@@ -160,26 +156,6 @@ $("studentForm")?.addEventListener("submit", e => {
 $("studentSearch")?.addEventListener("input", renderStudents);
 $("studentFilterStatus")?.addEventListener("change", renderStudents);
 
-function contactLinks(repPhone, studentPhone) {
-  let html = `<div style="display:flex; flex-direction:column; gap:8px;">`;
-  if (repPhone) {
-    html += `<div style="display:flex; gap:6px; align-items:center;">
-                 <span class="subline" style="margin:0; width:28px;">Rep:</span>
-                 <a class="mini-btn" style="padding:5px 8px; font-size:12px;" href="tel:${esc(repPhone)}" title="Llamar">📞</a> 
-                 <a class="mini-btn" style="color:#177344; border-color:#c2e8d3; background:#e6f7ed; padding:5px 8px; display:flex; align-items:center; gap:4px;" target="_blank" href="https://wa.me/${repPhone.replace(/\D/g, "")}?text=Hola">💬 WhatsApp</a>
-              </div>`;
-  }
-  if (studentPhone) {
-    html += `<div style="display:flex; gap:6px; align-items:center;">
-                 <span class="subline" style="margin:0; width:28px;">Alu:</span>
-                 <a class="mini-btn" style="padding:5px 8px; font-size:12px;" href="tel:${esc(studentPhone)}" title="Llamar">📞</a> 
-                 <a class="mini-btn" style="color:#177344; border-color:#c2e8d3; background:#e6f7ed; padding:5px 8px; display:flex; align-items:center; gap:4px;" target="_blank" href="https://wa.me/${studentPhone.replace(/\D/g, "")}?text=Hola">💬 WhatsApp</a>
-              </div>`;
-  }
-  html += `</div>`;
-  return html;
-}
-
 window.editStudent = function (id) {
   const s = data.students.find(x => x.id === id);
   if (!s) return;
@@ -188,8 +164,6 @@ window.editStudent = function (id) {
   if ($("studentCedula")) $("studentCedula").value = s.cedula;
   if ($("studentNames")) $("studentNames").value = s.names;
   if ($("studentLast")) $("studentLast").value = s.last;
-  if ($("studentRepPhone")) $("studentRepPhone").value = s.repPhone;
-  if ($("studentPhone")) $("studentPhone").value = s.phone || "";
   if ($("studentGroup")) $("studentGroup").value = s.group;
   if ($("studentStatus")) $("studentStatus").value = s.status || "Activo";
 
@@ -213,7 +187,7 @@ function renderStudents() {
 
   if (!arr.length) { $("studentsList").innerHTML = '<div class="empty-state" style="padding:20px;text-align:center;color:var(--muted);">No hay alumnos registrados.</div>'; return; }
 
-  $("studentsList").innerHTML = `<table style="min-width: 750px;"><thead><tr><th>Alumno</th><th>Cédula / ID</th><th>Grupo</th><th>Estado</th><th>Contactos</th><th>Acciones</th></tr></thead><tbody>${arr.map(s => {
+  $("studentsList").innerHTML = `<table style="min-width: 650px;"><thead><tr><th>Alumno</th><th>Cédula / ID</th><th>Grupo</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>${arr.map(s => {
     const status = s.status || "Activo";
     const statusBadge = status === "Activo" ? `<span class="badge" style="background:#e6f7ed;color:#177344">Activo</span>` : `<span class="badge" style="background:#fde7e9;color:#a41327">Inactivo</span>`;
     return `<tr>
@@ -221,7 +195,6 @@ function renderStudents() {
         <td>${esc(s.cedula)}<span class="subline">${esc(s.id)}</span></td>
         <td>${esc(s.group)}</td>
         <td>${statusBadge}</td>
-        <td>${contactLinks(s.repPhone, s.phone)}</td>
         <td>
             <div style="display:flex; gap:6px; flex-wrap:nowrap;">
                 <button class="mini-btn red" style="padding:6px 12px; font-weight:600;" data-pay-for="${s.id}">Cobrar</button> 
@@ -234,10 +207,10 @@ function renderStudents() {
   document.querySelectorAll("[data-pay-for]").forEach(b => b.addEventListener("click", () => { showView("payment"); selectStudentForPayment(b.dataset.payFor); }));
 }
 
-// --- CARGA MASIVA DE ALUMNOS (CSV) ---
+// --- CARGA MASIVA DE ALUMNOS (CSV ACTUALIZADO SIN TELÉFONOS) ---
 $("btnDownloadTemplate")?.addEventListener("click", () => {
-  const csvHeader = "cedula,nombres,apellidos,telefono_representante,telefono_alumno,grupo,estado\n";
-  const csvExample = "1727363986,Joe Alexander,Gavilanez Paucar,0984302599,0999999999,Jóvenes,Activo\n1712345678,Matias Josue,Gavilanez Paucar,0984302599,,Niños,Activo";
+  const csvHeader = "cedula,nombres,apellidos,grupo,estado\n";
+  const csvExample = "1727363986,Joe Alexander,Gavilanez Paucar,Jóvenes,Activo\n1712345678,Matias Josue,Gavilanez Paucar,Niños,Activo";
   const blob = new Blob([csvHeader + csvExample], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -266,17 +239,15 @@ $("btnImportStudentsCSV")?.addEventListener("change", (e) => {
       const separator = lines[i].includes(";") ? ";" : ",";
       const cols = lines[i].split(separator).map(c => c.trim().replace(/^["']|["']$/g, ""));
 
-      if (cols.length < 4) continue;
+      if (cols.length < 3) continue;
 
       const cedula = cols[0].replace(/\D/g, "").slice(0, 10);
       const names = cols[1];
       const last = cols[2];
-      const repPhone = cols[3];
-      const phone = cols[4] || "";
-      const group = cols[5] || "Niños";
-      const status = cols[6] || "Activo";
+      const group = cols[3] || "Niños";
+      const status = cols[4] || "Activo";
 
-      if (!cedula || !names || !last || !repPhone) continue;
+      if (!cedula || !names || !last) continue;
 
       if (data.students.some(s => s.cedula === cedula)) {
         duplicateCount++;
@@ -288,8 +259,6 @@ $("btnImportStudentsCSV")?.addEventListener("change", (e) => {
         cedula: cedula,
         names: names,
         last: last,
-        repPhone: repPhone,
-        phone: phone,
         group: (group.toLowerCase().includes("jov") || group.toLowerCase().includes("juv")) ? "Jóvenes" : "Niños",
         status: status.toLowerCase().includes("inac") ? "Inactivo" : "Activo"
       };
@@ -594,11 +563,9 @@ function downloadPdf(p) {
   logo.onerror = function () { doc.save(`Recibo_${p.receipt}.pdf`); };
 }
 
-// 1. Compartir el PDF físico + copiar el texto al portapapeles
 async function shareReceiptPdf(p) {
   const textMsg = getReceiptMessage(p);
 
-  // Copiar automáticamente el texto al portapapeles por comodidad del maestro
   if (navigator.clipboard && navigator.clipboard.writeText) {
     try {
       await navigator.clipboard.writeText(textMsg.replace(/\\n/g, '\n'));
@@ -625,25 +592,12 @@ async function shareReceiptPdf(p) {
     }
   }
 
-  // Si no soporta compartir archivo directo, abre el texto
   sendWhatsappMessage(p);
 }
 
-// 2. Enviar el mensaje de texto estructurado directo a WhatsApp
 function sendWhatsappMessage(p) {
   const textMsg = getReceiptMessage(p);
-  const s = data.students.find(x => x.id === p.studentId);
-  const targetPhone = s && (s.repPhone || s.phone) ? (s.repPhone || s.phone).replace(/\D/g, '') : '';
-
-  let waUrl = '';
-  if (targetPhone.length >= 9) {
-    // Si empieza con 09..., agregar prefijo de Ecuador (593)
-    const intlPhone = targetPhone.startsWith('0') ? '593' + targetPhone.substring(1) : (targetPhone.startsWith('593') ? targetPhone : '593' + targetPhone);
-    waUrl = `https://wa.me/${intlPhone}?text=${encodeURIComponent(textMsg.replace(/\\n/g, '\n'))}`;
-  } else {
-    waUrl = `https://wa.me/?text=${encodeURIComponent(textMsg.replace(/\\n/g, '\n'))}`;
-  }
-
+  const waUrl = `https://wa.me/?text=${encodeURIComponent(textMsg.replace(/\\n/g, '\n'))}`;
   window.open(waUrl, "_blank", "noopener");
 }
 
