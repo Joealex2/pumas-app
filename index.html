@@ -169,12 +169,24 @@
 
       <section id="view-history" class="view hidden">
         <div class="panel">
-          <div class="section-head"><div><h3>Historial de recibos y pagos</h3><p class="muted">Filtra por mes, concepto, estado o busca un alumno específico.</p></div></div>
+          <div class="section-head"><div><h3>Historial de recibos y pagos</h3><p class="muted">Filtra por mes, concepto, estado o busca un alumno específico escribiendo su nombre.</p></div></div>
           <div class="filter-grid">
             <div><label>Mes</label><input id="historyMonth" type="month"></div>
             <div><label>Concepto</label><select id="historyConcept"><option value="all">Todos</option><option>Mensualidad</option><option>Mensualidad + Matrícula</option><option>Implementos deportivos</option><option>Uniformes</option><option>Otros</option></select></div>
             <div><label>Estado deuda</label><select id="historyStatus"><option value="all">Todos</option><option value="paid">Pagados (Saldo $0)</option><option value="partial">Con abonos parciales</option><option value="pending">Deudas pendientes</option></select></div>
-            <div><label>Filtrar por Alumno</label><select id="historyStudentFilter"><option value="all">Todos los alumnos</option></select></div>
+            
+            <!-- Buscador por escritura para filtrar historial por estudiante -->
+            <div>
+              <label>Filtrar por Alumno</label>
+              <div class="search-dropdown-wrap">
+                  <input id="historyStudentSearch" placeholder="Escribe nombre o cédula..." autocomplete="off">
+                  <div id="historyStudentResults" class="search-results hidden"></div>
+              </div>
+              <input type="hidden" id="historyStudentFilter" value="all">
+              <div id="historyStudentSelected" class="selected-badge hidden" style="margin-top: 4px; padding: 6px 10px; font-size: 12px;">
+                  <span id="historyStudentName"></span><button type="button" class="mini-btn" id="historyStudentClear" style="padding: 2px 6px;">✕</button>
+              </div>
+            </div>
           </div>
           <div class="history-totals"><div><span>Recibos</span><b id="historyCount">0</b></div><div><span>Recaudado</span><b id="historyRevenue">$0.00</b></div><div><span>Saldo por cobrar</span><b id="historyBalance">$0.00</b></div></div>
           <div id="historyList" class="table-wrap"></div>
