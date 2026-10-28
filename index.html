@@ -99,16 +99,28 @@
             </div>
           </form>
         </div>
+
         <div class="panel">
           <div class="section-head stack-mobile">
-            <div><h3>Lista de alumnos</h3></div>
-            <div style="display: flex; gap: 10px;">
-                <select id="studentFilterStatus" class="search-input" style="width: auto;">
-                    <option value="all">Todos los estados</option>
-                    <option value="Activo" selected>Solo Activos</option>
-                    <option value="Inactivo">Solo Inactivos</option>
-                </select>
-                <input id="studentSearch" class="search-input" placeholder="Buscar...">
+            <div>
+              <h3>Lista de alumnos</h3>
+              <p class="muted">Gestión general y carga masiva.</p>
+            </div>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+              <!-- Botones de Carga Masiva CSV/Excel -->
+              <button class="secondary" type="button" id="btnDownloadTemplate" style="font-size: 13px; padding: 6px 10px;">📋 Descargar Plantilla</button>
+              <label class="primary" style="margin:0; display:inline-flex; align-items:center; cursor:pointer; font-size: 13px; padding: 6px 12px;">
+                📥 Cargar Alumnos (.csv)
+                <input type="file" id="btnImportStudentsCSV" accept=".csv" style="display: none;">
+              </label>
+
+              <!-- Filtro y Búsqueda -->
+              <select id="studentFilterStatus" class="search-input" style="width: auto;">
+                  <option value="all">Todos los estados</option>
+                  <option value="Activo" selected>Solo Activos</option>
+                  <option value="Inactivo">Solo Inactivos</option>
+              </select>
+              <input id="studentSearch" class="search-input" placeholder="Buscar...">
             </div>
           </div>
           <div id="studentsList" class="table-wrap"></div>

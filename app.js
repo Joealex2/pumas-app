@@ -1,7 +1,7 @@
 const $ = (id) => document.getElementById(id);
 const STORAGE_KEY = "losPumas_VFinal_V2"; // Clave actualizada para refrescar credenciales
 const defaultTariffs = {normal:25, late:30, matricula:15, implements:0, uniform:0, other:0};
-const defaultAuth = {user: "Galo", pass: "17021975"}; // Modifica aquí tus credenciales por defecto si deseas
+const defaultAuth = {user: "Galo", pass: "17021975"}; // Credenciales configuradas
 
 let data = loadData();
 
@@ -213,6 +213,87 @@ function renderStudents(){
  
  document.querySelectorAll("[data-pay-for]").forEach(b=>b.addEventListener("click",()=>{ showView("payment"); selectStudentForPayment(b.dataset.payFor); }));
 }
+
+// --- CARGA MASIVA DE ALUMNOS (CSV / EXCEL) ---
+$("btnDownloadTemplate")?.addEventListener("click", () => {
+    const csvHeader = "cedula,nombres,apellidos,telefono_representante,telefono_alumno,grupo,estado\n";
+    const csvExample = "1727363986,Joe Alexander,Gavilanez Paucar,0984302599,0999999999,Jóvenes,Activo\n1712345678,Matias Josue,Gavilanez Paucar,0984302599,,Niños,Activo";
+    const blob = new Blob([csvHeader + csvExample], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "Plantilla_Alumnos_LosPumas.csv";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+});
+
+$("btnImportStudentsCSV")?.addEventListener("change", (e) => {
+    const file = e.target.files[0];
+    if(!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function(evt) {
+        const text = evt.target.result;
+        const lines = text.split(/\r?\n/).filter(line => line.trim() !== "");
+        
+        if(lines.length < 2) {
+            notice("El archivo está vacío o no contiene datos.", true);
+            return;
+        }
+
+        let importCount = 0;
+        let duplicateCount = 0;
+
+        for(let i = 1; i < lines.length; i++) {
+            const separator = lines[i].includes(";") ? ";" : ",";
+            const cols = lines[i].split(separator).map(c => c.trim().replace(/^["']|["']$/g, ""));
+
+            if(cols.length < 4) continue;
+
+            const cedula = cols[0].replace(/\D/g, "").slice(0, 10);
+            const names = cols[1];
+            const last = cols[2];
+            const repPhone = cols[3];
+            const phone = cols[4] || "";
+            const group = cols[5] || "Niños";
+            const status = cols[6] || "Activo";
+
+            if(!cedula || !names || !last || !repPhone) continue;
+
+            if(data.students.some(s => s.cedula === cedula)) {
+                duplicateCount++;
+                continue;
+            }
+
+            const newStudent = {
+                id: `LP-${String(data.nextStudent++).padStart(4, "0")}`,
+                cedula: cedula,
+                names: names,
+                last: last,
+                repPhone: repPhone,
+                phone: phone,
+                group: (group.toLowerCase().includes("jov") || group.toLowerCase().includes("juv")) ? "Jóvenes" : "Niños",
+                status: status.toLowerCase().includes("inac") ? "Inactivo" : "Activo"
+            };
+
+            data.students.push(newStudent);
+            importCount++;
+        }
+
+        saveData();
+        renderAll();
+        e.target.value = "";
+
+        if(importCount > 0) {
+            notice(`¡Carga exitosa! Se importaron ${importCount} deportistas. ${duplicateCount > 0 ? `(${duplicateCount} ya existían).` : ""}`);
+        } else {
+            notice("No se importó ningún alumno nuevo. Verifica que no estén duplicados.", true);
+        }
+    };
+
+    reader.readAsText(file, "UTF-8");
+});
 
 // --- LÓGICA DE PAGOS ---
 $("payStudentSearch")?.addEventListener("input", (e) => {
