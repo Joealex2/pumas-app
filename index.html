@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#c7192d">
   <title>Club Los Pumas | Gestión de pagos</title>
-  <link rel="stylesheet" href="/pumas-app/styles.css">
+  <link rel="stylesheet" href="/pumas-app/styles.css?v=4">
   <link rel="manifest" href="/pumas-app/manifest.json">
 </head>
 <body>
@@ -234,15 +234,14 @@
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="/pumas-app/app.js"></script>
+  <script src="/pumas-app/app.js?v=4"></script>
   
-  <!-- Registro único y oficial del Service Worker -->
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('/pumas-app/sw.js', { scope: '/pumas-app/' })
-          .then(reg => console.log('PWA registrada con éxito:', reg.scope))
-          .catch(err => console.log('Error registro PWA:', err));
+          .then(reg => console.log('PWA lista con alcance:', reg.scope))
+          .catch(err => console.log('Error PWA: ', err));
       });
     }
   </script>
