@@ -92,9 +92,8 @@ $("loginForm")?.addEventListener("submit", e => {
   }
 });
 
-// Cerrar sesión desde escritorio, barra superior o menú móvil
+// Cerrar sesión desde escritorio o menú móvil
 $("logoutBtn")?.addEventListener("click", doLogout);
-$("topbarLogoutBtn")?.addEventListener("click", doLogout);
 $("logoutBtnNav")?.addEventListener("click", doLogout);
 
 document.querySelectorAll("[data-view]").forEach(b => b.addEventListener("click", () => showView(b.dataset.view)));
@@ -207,7 +206,7 @@ function renderStudents() {
   document.querySelectorAll("[data-pay-for]").forEach(b => b.addEventListener("click", () => { showView("payment"); selectStudentForPayment(b.dataset.payFor); }));
 }
 
-// --- CARGA MASIVA DE ALUMNOS (CSV ACTUALIZADO SIN TELÉFONOS) ---
+// --- CARGA MASIVA DE ALUMNOS (CSV) ---
 $("btnDownloadTemplate")?.addEventListener("click", () => {
   const csvHeader = "cedula,nombres,apellidos,grupo,estado\n";
   const csvExample = "1727363986,Joe Alexander,Gavilanez Paucar,Jóvenes,Activo\n1712345678,Matias Josue,Gavilanez Paucar,Niños,Activo";
@@ -462,7 +461,7 @@ function renderReceipt(p) {
                 </div>
                 
                 <div style="text-align: center; width: 150px; margin-left:auto;">
-                    <div style="font-family: 'Georgia', serif; font-style: italic; font-size: 24px; color: #333; margin-bottom: 5px;">J Gavilanez</div>
+                    <div style="font-family: 'Georgia', serif; font-style: italic; font-size: 24px; color: #333; margin-bottom: 5px;">G Gavilanez</div>
                     <div style="border-top: 1px solid #000; padding-top: 5px; font-size: 11px; font-weight: bold; line-height: 1.2; color: #000;">Lic. Galo Gavilanez<br>Director y Maestro</div>
                 </div>
             </div>
@@ -540,7 +539,7 @@ function buildPdfDoc(p) {
   doc.line(98, 162, 125, 162);
 
   doc.setFont("times", "italic"); doc.setFontSize(22);
-  doc.text("J Gavilanez", 105, 182, { align: "center" });
+  doc.text("G Gavilanez", 105, 182, { align: "center" });
   doc.setDrawColor(0, 0, 0); doc.line(80, 185, 130, 185);
 
   doc.setFont("helvetica", "bold"); doc.setFontSize(10);
