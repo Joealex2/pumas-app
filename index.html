@@ -5,18 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#c7192d">
   <title>Club Los Pumas | Gestión de pagos</title>
-  <link rel="stylesheet" href="/pumas-app/styles.css?v=4">
-  <link rel="manifest" href="/pumas-app/manifest.json">
+  <link rel="stylesheet" href="./styles.css">
+  <link rel="manifest" href="./manifest.json">
 </head>
 <body>
   <div id="loginScreen" class="login-wrap">
     <div class="login-card">
-      <img src="/pumas-app/img/Pum.png" alt="Logo Los Pumas" class="logo-img">
+      <img src="./img/Pum.png" alt="Logo Los Pumas" class="logo-img">
       <p class="eyebrow">CLUB DEPORTIVO FORMATIVO ESPECIALIZADO</p>
       <h1>LOS PUMAS</h1>
       <p class="muted">Sistema de gestión de alumnos y pagos</p>
       
-      <!-- Aviso de error visible en Login -->
       <div id="loginNotice" class="notice error hidden" style="margin-top: 15px;"></div>
 
       <form id="loginForm">
@@ -24,7 +23,7 @@
         <input id="loginUser" autocomplete="username" required placeholder="Ingresa tu usuario">
         <label for="loginPass">Contraseña</label>
         <input id="loginPass" type="password" autocomplete="current-password" required placeholder="Ingresa tu contraseña">
-        <button class="primary full" type="submit">Ingresar</button>
+        <button class="primary full" type="submit" id="loginSubmitBtn">Ingresar</button>
       </form>
     </div>
   </div>
@@ -32,7 +31,7 @@
   <div id="appShell" class="app-shell hidden">
     <aside class="sidebar">
       <div class="side-brand">
-        <img src="/pumas-app/img/Pum.png" alt="Logo" class="logo-img-small">
+        <img src="./img/Pum.png" alt="Logo" class="logo-img-small">
         <div><b>LOS PUMAS</b><span>Gestión de pagos</span></div>
       </div>
       <nav id="mainNav">
@@ -107,14 +106,12 @@
               <p class="muted">Gestión general y carga masiva.</p>
             </div>
             <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
-              <!-- Botones de Carga Masiva CSV/Excel -->
               <button class="secondary" type="button" id="btnDownloadTemplate" style="font-size: 13px; padding: 6px 10px;">📋 Descargar Plantilla</button>
               <label class="primary" style="margin:0; display:inline-flex; align-items:center; cursor:pointer; font-size: 13px; padding: 6px 12px;">
                 📥 Cargar Alumnos (.csv)
                 <input type="file" id="btnImportStudentsCSV" accept=".csv" style="display: none;">
               </label>
 
-              <!-- Filtro y Búsqueda -->
               <select id="studentFilterStatus" class="search-input" style="width: auto;">
                   <option value="all">Todos los estados</option>
                   <option value="Activo" selected>Solo Activos</option>
@@ -234,14 +231,15 @@
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="/pumas-app/app.js?v=4"></script>
+  <!-- Rutas relativas para que se cargue sin importar la URL de GitHub -->
+  <script src="./app.js"></script>
   
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/pumas-app/sw.js', { scope: '/pumas-app/' })
-          .then(reg => console.log('PWA lista con alcance:', reg.scope))
-          .catch(err => console.log('Error PWA: ', err));
+        navigator.serviceWorker.register('./sw.js')
+          .then(reg => console.log('PWA lista'))
+          .catch(err => console.log('Error PWA:', err));
       });
     }
   </script>
