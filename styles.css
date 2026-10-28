@@ -461,6 +461,16 @@ th {
   border-color: var(--red);
 }
 
+.mini-btn.danger {
+  background: #fde7e9;
+  color: #a41327;
+  border-color: #f7c5ca;
+}
+.mini-btn.danger:hover {
+  background: #a41327;
+  color: #fff;
+}
+
 .subline {
   display: block;
   font-size: 11px;
