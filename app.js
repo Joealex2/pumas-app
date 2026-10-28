@@ -1,22 +1,25 @@
 const $ = (id) => document.getElementById(id);
-const STORAGE_KEY = "losPumasV3_Limpio"; 
+const STORAGE_KEY = "losPumas_VFinal"; // Clave actualizada para refrescar credenciales
 const defaultTariffs = {normal:25, late:30, matricula:15, implements:0, uniform:0, other:0};
+const defaultAuth = {user: "admin", pass: "pumas123"}; // Modifica aquí tus credenciales por defecto si deseas
+
 let data = loadData();
 
 function loadData(){
   let saved;
   try { saved = JSON.parse(localStorage.getItem(STORAGE_KEY)); } catch(e){}
-  if(!saved) return {students:[], obligations:[], abonos:[], tariffs:{...defaultTariffs}, auth:{user:"admin", pass:"pumas123"}, nextStudent:1, nextReceipt:1, nextObligation:1};
+  if(!saved) return {students:[], obligations:[], abonos:[], tariffs:{...defaultTariffs}, auth:{...defaultAuth}, nextStudent:1, nextReceipt:1, nextObligation:1};
   if(!saved.obligations) saved.obligations = [];
   if(!saved.abonos) saved.abonos = [];
   if(!saved.tariffs) saved.tariffs = {...defaultTariffs};
-  if(!saved.auth) saved.auth = {user:"Galo", pass:"1712857356"}; // Credenciales iniciales
+  if(!saved.auth) saved.auth = {...defaultAuth};
   
   if(saved.students) {
       saved.students.forEach(s => { if(!s.status) s.status = "Activo"; });
   }
   return saved;
 }
+
 function saveData(){ 
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); 
     renderAll(); 
@@ -25,7 +28,24 @@ function saveData(){
 function money(n){ return new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(Number(n)||0); }
 function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
 function today(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;}
-function notice(msg,error=false){const n=$("notice");if(!n)return;n.textContent=msg;n.classList.remove("hidden","error");if(error)n.classList.add("error");window.scrollTo({top:0,behavior:"smooth"});setTimeout(()=>n.classList.add("hidden"),4000);}
+
+function notice(msg, error=false){
+    const n = $("notice");
+    if(!n) return;
+    n.textContent = msg;
+    n.classList.remove("hidden","error");
+    if(error) n.classList.add("error");
+    window.scrollTo({top:0, behavior:"smooth"});
+    setTimeout(() => n.classList.add("hidden"), 4000);
+}
+
+function showLoginError(msg){
+    const ln = $("loginNotice");
+    if(!ln) return;
+    ln.textContent = msg;
+    ln.classList.remove("hidden");
+    setTimeout(() => ln.classList.add("hidden"), 4000);
+}
 
 function showView(name){
   document.querySelectorAll(".view").forEach(v=>v.classList.add("hidden"));
@@ -37,16 +57,23 @@ function showView(name){
   if(name==="tariffs") fillTariffs();
 }
 
-function login(){ $("loginScreen")?.classList.add("hidden");$("appShell")?.classList.remove("hidden");showView("dashboard");renderAll(); }
+function login(){ 
+    $("loginScreen")?.classList.add("hidden");
+    $("appShell")?.classList.remove("hidden");
+    showView("dashboard");
+    renderAll(); 
+}
 
 $("loginForm")?.addEventListener("submit", e => {
     e.preventDefault();
     const u = $("loginUser")?.value.trim().toLowerCase();
     const p = $("loginPass")?.value.trim();
-    if(u === "Galo" && p === "1712857356"){
-        login(); notice("Sesión iniciada.");
+    
+    if(u === data.auth.user.toLowerCase() && p === data.auth.pass){
+        login();
+        notice("Sesión iniciada.");
     } else {
-        notice("Credenciales incorrectas.", true);
+        showLoginError("Usuario o contraseña incorrectos.");
     }
 });
 
@@ -115,7 +142,6 @@ $("studentFilterStatus")?.addEventListener("change",renderStudents);
 
 function contactLinks(repPhone, studentPhone){
  let html = `<div style="display:flex; flex-direction:column; gap:8px;">`;
- // Representante
  if(repPhone) {
      html += `<div style="display:flex; gap:6px; align-items:center;">
                  <span class="subline" style="margin:0; width:28px;">Rep:</span>
@@ -123,7 +149,6 @@ function contactLinks(repPhone, studentPhone){
                  <a class="mini-btn" style="color:#177344; border-color:#c2e8d3; background:#e6f7ed; padding:5px 8px; display:flex; align-items:center; gap:4px;" target="_blank" href="https://wa.me/${repPhone.replace(/\D/g,"")}?text=Hola">💬 WhatsApp</a>
               </div>`;
  }
- // Alumno
  if(studentPhone) {
      html += `<div style="display:flex; gap:6px; align-items:center;">
                  <span class="subline" style="margin:0; width:28px;">Alu:</span>
@@ -135,42 +160,6 @@ function contactLinks(repPhone, studentPhone){
  return html;
 }
 
-function renderStudents(){
- if(!$("studentsList")) return;
- const q = ($("studentSearch")?.value||"").toLowerCase();
- const filterStatus = $("studentFilterStatus")?.value || "all";
- 
- const arr = data.students.filter(s => {
-     const status = s.status || "Activo"; 
-     const matchSearch = [s.cedula, s.names, s.last].join(" ").toLowerCase().includes(q);
-     const matchStatus = filterStatus === "all" || status === filterStatus;
-     return matchSearch && matchStatus;
- });
- 
- if(!arr.length){$("studentsList").innerHTML='<div class="empty-state">No hay alumnos.</div>';return;}
- 
- // Ampliamos el min-width de la tabla a 920px para que nunca aplaste los botones
- $("studentsList").innerHTML=`<table style="min-width: 920px;"><thead><tr><th>Alumno</th><th>Cédula / ID</th><th>Grupo</th><th>Estado</th><th>Contactos</th><th>Acciones</th></tr></thead><tbody>${arr.map(s=>{
-     const status = s.status || "Activo";
-     const statusBadge = status === "Activo" ? `<span class="badge" style="background:#e6f7ed;color:#177344">Activo</span>` : `<span class="badge" style="background:#fde7e9;color:#a41327">Inactivo</span>`;
-     
-     return `<tr>
-        <td><b>${esc(s.names)} ${esc(s.last)}</b></td>
-        <td>${esc(s.cedula)}<span class="subline">${esc(s.id)}</span></td>
-        <td>${esc(s.group)}</td>
-        <td>${statusBadge}</td>
-        <td>${contactLinks(s.repPhone, s.phone)}</td>
-        <td>
-            <div style="display:flex; gap:6px; flex-wrap:nowrap;">
-                <button class="mini-btn red" style="padding:6px 12px; font-weight:600;" data-pay-for="${s.id}">Cobrar</button> 
-                <button class="mini-btn" style="padding:6px 12px;" onclick="editStudent('${s.id}')">Editar</button>
-            </div>
-        </td>
-     </tr>`;
- }).join("")}</tbody></table>`;
- 
- document.querySelectorAll("[data-pay-for]").forEach(b=>b.addEventListener("click",()=>{ showView("payment"); selectStudentForPayment(b.dataset.payFor); }));
-}
 window.editStudent = function(id) {
     const s = data.students.find(x => x.id === id);
     if(!s) return;
@@ -204,10 +193,22 @@ function renderStudents(){
  
  if(!arr.length){$("studentsList").innerHTML='<div class="empty-state">No hay alumnos.</div>';return;}
  
- $("studentsList").innerHTML=`<table><thead><tr><th>Alumno</th><th>Cédula / ID</th><th>Grupo</th><th>Estado</th><th>Contactos</th><th>Acciones</th></tr></thead><tbody>${arr.map(s=>{
+ $("studentsList").innerHTML=`<table style="min-width: 920px;"><thead><tr><th>Alumno</th><th>Cédula / ID</th><th>Grupo</th><th>Estado</th><th>Contactos</th><th>Acciones</th></tr></thead><tbody>${arr.map(s=>{
      const status = s.status || "Activo";
      const statusBadge = status === "Activo" ? `<span class="badge" style="background:#e6f7ed;color:#177344">Activo</span>` : `<span class="badge" style="background:#fde7e9;color:#a41327">Inactivo</span>`;
-     return `<tr><td><b>${esc(s.names)} ${esc(s.last)}</b></td><td>${esc(s.cedula)}<span class="subline">${esc(s.id)}</span></td><td>${esc(s.group)}</td><td>${statusBadge}</td><td>${contactLinks(s.repPhone, s.phone)}</td><td><div style="display:flex; gap:5px; flex-wrap:wrap;"><button class="mini-btn red" data-pay-for="${s.id}">Cobrar</button> <button class="mini-btn" onclick="editStudent('${s.id}')">Editar</button></div></td></tr>`;
+     return `<tr>
+        <td><b>${esc(s.names)} ${esc(s.last)}</b></td>
+        <td>${esc(s.cedula)}<span class="subline">${esc(s.id)}</span></td>
+        <td>${esc(s.group)}</td>
+        <td>${statusBadge}</td>
+        <td>${contactLinks(s.repPhone, s.phone)}</td>
+        <td>
+            <div style="display:flex; gap:6px; flex-wrap:nowrap;">
+                <button class="mini-btn red" style="padding:6px 12px; font-weight:600;" data-pay-for="${s.id}">Cobrar</button> 
+                <button class="mini-btn" style="padding:6px 12px;" onclick="editStudent('${s.id}')">Editar</button>
+            </div>
+        </td>
+     </tr>`;
  }).join("")}</tbody></table>`;
  
  document.querySelectorAll("[data-pay-for]").forEach(b=>b.addEventListener("click",()=>{ showView("payment"); selectStudentForPayment(b.dataset.payFor); }));
@@ -277,6 +278,7 @@ function tariffFor(concept,type){
  if(concept==="Uniformes") return data.tariffs.uniform;
  return data.tariffs.other;
 }
+
 function updateSuggestedAmount(){
  if($("payObligationId")?.value !== "") return; 
  const concept=$("payConcept")?.value;
@@ -290,16 +292,27 @@ $("monthlyType")?.addEventListener("change",updateSuggestedAmount);
 $("payAbono")?.addEventListener("input",updateBalance);
 $("payAmount")?.addEventListener("input",updateBalance);
 
-function updateBalance(){const total=Number($("payAmount")?.value)||0,abono=Number($("payAbono")?.value)||0;if($("payBalance"))$("payBalance").textContent=money(Math.max(0,total-abono));}
-$("paymentForm")?.addEventListener("reset",()=>setTimeout(()=>{ if($("recordDate"))$("recordDate").value=today();if($("payAbono"))$("payAbono").value="";resetPaymentFormToNew();},0));
+function updateBalance(){
+    const total = Number($("payAmount")?.value) || 0;
+    const abono = Number($("payAbono")?.value) || 0;
+    if($("payBalance")) $("payBalance").textContent = money(Math.max(0, total - abono));
+}
+
+$("paymentForm")?.addEventListener("reset",()=>setTimeout(()=>{ 
+    if($("recordDate")) $("recordDate").value = today();
+    if($("payAbono")) $("payAbono").value = "";
+    resetPaymentFormToNew();
+},0));
 
 $("paymentForm")?.addEventListener("submit",e=>{
- e.preventDefault(); const studentId = $("payStudentId")?.value;
+ e.preventDefault(); 
+ const studentId = $("payStudentId")?.value;
  if(!studentId){notice("Selecciona un alumno.",true);return;}
  const total=Number($("payAmount")?.value), abono=Number($("payAbono")?.value);
  if(!Number.isFinite(total)||total<0||!Number.isFinite(abono)||abono<0){notice("Valores inválidos.",true);return;}
  
- const s=data.students.find(x=>x.id===studentId); const isExisting = $("payObligationId")?.value !== "";
+ const s=data.students.find(x=>x.id===studentId); 
+ const isExisting = $("payObligationId")?.value !== "";
  let obId = $("payObligationId")?.value;
  
  if(!isExisting) {
@@ -313,8 +326,12 @@ $("paymentForm")?.addEventListener("submit",e=>{
  }
  
  const p={ receipt:`LP-${String(data.nextReceipt++).padStart(6,"0")}`, obligationId: obId, studentId: s.id, studentName:`${s.names} ${s.last}`, cedula: s.cedula, concept: $("payConcept")?.value, recordDate:$("recordDate")?.value, amount: abono, notes:$("payNotes")?.value.trim() };
- data.abonos.push(p); saveData(); e.target.reset(); $("payStudentClear")?.click();
- renderReceipt(getJoinedReceipt(p)); notice("Registrado correctamente.");
+ data.abonos.push(p); 
+ saveData(); 
+ e.target.reset(); 
+ $("payStudentClear")?.click();
+ renderReceipt(getJoinedReceipt(p)); 
+ notice("Registrado correctamente.");
 });
 
 function getJoinedReceipt(abono) {
@@ -322,13 +339,12 @@ function getJoinedReceipt(abono) {
     return { ...abono, total: ob.total || 0, balance: ob.balance || 0, monthlyType: ob.monthlyType || 'normal' };
 }
 
-// --- NUEVO FORMATO DE RECIBOS ---
+// --- RECIBO ---
 function renderReceipt(p){
     const box = $("receiptResult");
     if(!box) return;
     box.classList.remove("hidden");
     
-    // Vista HTML fusionada (Idéntica al diseño de la imagen)
     box.innerHTML=`
     <div class="section-head">
         <div><h3>Recibo emitido</h3><p class="muted">Documento ${esc(p.receipt)}</p></div>
@@ -336,7 +352,6 @@ function renderReceipt(p){
     </div>
     
     <div class="receipt-paper" id="receiptPaper" style="padding:0; overflow:hidden; border-top:none;">
-        <!-- Encabezado Oscuro -->
         <div style="background-color: #211e1e; color: #fff; padding: 20px; display: flex; align-items: center; gap: 15px;">
             <img src="img/Pum.png" alt="Logo" style="width: 70px; height: 70px; border-radius: 50%; object-fit: cover; background: #fff; padding: 2px;">
             <div>
@@ -345,7 +360,6 @@ function renderReceipt(p){
             </div>
         </div>
         
-        <!-- Cuerpo Principal -->
         <div style="padding: 25px;">
             <h1 style="margin: 0 0 25px 0; font-size: 26px; font-weight: 900; letter-spacing: 0.5px; color: #000;">RECIBO</h1>
             
@@ -355,7 +369,6 @@ function renderReceipt(p){
                 <b style="text-align: right;">Fecha :</b> <span style="border-bottom: 1px solid #777; padding-bottom: 2px;">${esc(p.recordDate)}</span>
             </div>
             
-            <!-- Bloque Descripción -->
             <div style="margin-bottom: 40px;">
                 <div style="background-color: #26292b; color: #fff; display: inline-block; padding: 6px 14px; font-weight: bold; font-size: 13px;">Descripción:</div>
                 <div style="padding: 10px 0; border-bottom: 1px solid #777; font-size: 14px; min-height: 30px; color: #000;">
@@ -364,7 +377,6 @@ function renderReceipt(p){
                 </div>
             </div>
             
-            <!-- Valores y Firma -->
             <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 10px;">
                 <div style="display: flex; flex-direction: column; gap: 20px;">
                     <div style="display: flex; align-items: center; gap: 8px;">
@@ -378,13 +390,12 @@ function renderReceipt(p){
                 </div>
                 
                 <div style="text-align: center; width: 150px;">
-                    <div style="font-family: 'Georgia', serif; font-style: italic; font-size: 24px; color: #333; margin-bottom: 5px;">G Gavilanez</div>
+                    <div style="font-family: 'Georgia', serif; font-style: italic; font-size: 24px; color: #333; margin-bottom: 5px;">J Gavilanez</div>
                     <div style="border-top: 1px solid #000; padding-top: 5px; font-size: 11px; font-weight: bold; line-height: 1.2; color: #000;">Lic. Galo Gavilanez<br>Director y Maestro</div>
                 </div>
             </div>
         </div>
         
-        <!-- Pie -->
         <div style="background-color: #26292b; height: 35px; width: 100%;"></div>
     </div>
     
@@ -403,7 +414,6 @@ function downloadPdf(p){
     const {jsPDF} = window.jspdf;
     const doc = new jsPDF({ format: 'a5' }); 
     
-    // Encabezado Superior Oscuro
     doc.setFillColor(33, 30, 30);
     doc.rect(0, 0, 148, 42, 'F');
     
@@ -411,7 +421,6 @@ function downloadPdf(p){
     logo.src = 'img/Pum.png';
     
     logo.onload = function() {
-        // Logo
         doc.addImage(logo, 'PNG', 12, 6, 28, 28);
         drawPdfContent(doc, p);
     };
@@ -421,7 +430,6 @@ function downloadPdf(p){
     };
     
     function drawPdfContent(doc, p) {
-        // Textos del Encabezado
         doc.setTextColor(255, 255, 255);
         doc.setFont("helvetica", "bold");
         doc.setFontSize(14);
@@ -433,26 +441,22 @@ function downloadPdf(p){
         doc.text("SANTA ISABEL, CALLE QUEVEDO Y PICHINCHA", 46, 31);
         doc.text("CEL: 0984302599", 46, 36);
         
-        // Título RECIBO
         doc.setTextColor(0, 0, 0);
         doc.setFont("helvetica", "bold");
         doc.setFontSize(22);
         doc.text("RECIBO", 15, 58);
         
-        // Campos (Recibo, Nombre, Fecha)
         doc.setFontSize(12);
         doc.setFont("helvetica", "normal");
         doc.text("Recibo Nº :", 15, 75); doc.text(p.receipt, 42, 75);
         doc.text("Recibo a: :", 15, 83); doc.text(p.studentName, 42, 83);
         doc.text("Fecha :", 15, 91); doc.text(p.recordDate, 42, 91);
         
-        // Líneas punteadas/sólidas (imitando diseño)
         doc.setDrawColor(120, 120, 120);
         doc.line(40, 76, 133, 76);
         doc.line(40, 84, 133, 84);
         doc.line(40, 92, 133, 92);
         
-        // Bloque Descripción
         doc.setFillColor(38, 41, 43);
         doc.rect(15, 105, 30, 8, 'F');
         doc.setTextColor(255, 255, 255);
@@ -470,29 +474,24 @@ function downloadPdf(p){
         }
         
         doc.setDrawColor(120, 120, 120);
-        doc.line(15, 132, 133, 132); // Línea final descripción
+        doc.line(15, 132, 133, 132);
         
-        // Recuadros de Valores
-        doc.setFillColor(181, 181, 181); // Gris claro
-        
-        // Saldo
+        doc.setFillColor(181, 181, 181);
         doc.rect(15, 145, 22, 8, 'F');
         doc.setFont("helvetica", "bold");
         doc.setFontSize(11);
         doc.setTextColor(0, 0, 0);
         doc.text("SALDO:", 17, 150.5);
-        doc.setTextColor(199, 25, 45); // Rojo para la deuda pendiente
+        doc.setTextColor(199, 25, 45);
         doc.text(money(p.balance), 40, 150.5);
-        doc.line(39, 152, 65, 152); // Línea bajo el valor
+        doc.line(39, 152, 65, 152);
         
-        // Pago Total (Abono)
         doc.setTextColor(0, 0, 0);
         doc.rect(70, 155, 26, 8, 'F');
         doc.text("Pago Total:", 72, 160.5);
         doc.text(money(p.amount), 98, 160.5);
-        doc.line(98, 162, 125, 162); // Línea bajo el valor
+        doc.line(98, 162, 125, 162);
         
-        // Firma y Sello
         doc.setFont("times", "italic");
         doc.setFontSize(22);
         doc.text("J Gavilanez", 105, 182, { align: "center" });
@@ -505,7 +504,6 @@ function downloadPdf(p){
         doc.text("Lic. Galo Gavilanez", 105, 190, { align: "center" });
         doc.text("Director y Maestro", 105, 195, { align: "center" });
         
-        // Pie oscuro
         doc.setFillColor(38, 41, 43);
         doc.rect(0, 202, 148, 8, 'F');
         
@@ -514,7 +512,6 @@ function downloadPdf(p){
 }
 
 async function shareReceipt(p){
-    // Ajustado con los términos: Total a pagar y Saldo. Sin frase extra.
     const text = `*CLUB LOS PUMAS* 🐆\n_Comprobante de Movimiento_\n\n*Recibo:* ${p.receipt}\n*Alumno:* ${p.studentName}\n*Concepto:* ${p.concept}\n*Fecha:* ${p.recordDate}\n\n*Total a pagar:* ${money(p.total)}\n*Abono:* 💵 ${money(p.amount)}\n*Saldo:* 🔴 ${money(p.balance)}`;
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`,"_blank","noopener");
 }
@@ -551,7 +548,7 @@ function renderHistory(){
  document.querySelectorAll("[data-receipt]").forEach(b=>b.addEventListener("click",()=>{const p=arr.find(x=>x.receipt===b.dataset.receipt);if(p)renderReceipt(p);showView("payment");}));
 }
 
-// --- LÓGICA TARIFAS ---
+// --- CONFIGURACIÓN DE TARIFAS Y SEGURIDAD ---
 function fillTariffs(){
     if($("tariffNormal")) $("tariffNormal").value=data.tariffs.normal;
     if($("tariffLate")) $("tariffLate").value=data.tariffs.late;
@@ -560,22 +557,18 @@ function fillTariffs(){
     if($("tariffUniform")) $("tariffUniform").value=data.tariffs.uniform;
     if($("tariffOther")) $("tariffOther").value=data.tariffs.other;
 }
+
 $("tariffForm")?.addEventListener("submit",e=>{
     e.preventDefault();
     const vals={normal:$("tariffNormal")?.value,late:$("tariffLate")?.value,matricula:$("tariffMatricula")?.value,implements:$("tariffImplements")?.value,uniform:$("tariffUniform")?.value,other:$("tariffOther")?.value};
     for(const [k,v] of Object.entries(vals)){data.tariffs[k]=Number(v);}
     saveData();notice("Tarifas guardadas.");
 });
+
 $("resetTariffs")?.addEventListener("click",()=>{
     if(confirm("¿Restablecer?")){data.tariffs={...defaultTariffs};saveData();fillTariffs();notice("Valores por defecto aplicados.");}
 });
 
-function renderDashboard(){ 
-    if($("statStudents")) $("statStudents").textContent=data.students.filter(s => s.status !== "Inactivo").length; 
-    if($("statPayments")) $("statPayments").textContent=data.abonos.length; 
-    if($("statRevenue")) $("statRevenue").textContent=money(data.abonos.reduce((s,a)=>s+a.amount,0)); 
-}
-// --- CONFIGURACIÓN DE CREDENCIALES ---
 $("authConfigForm")?.addEventListener("submit", e => {
     e.preventDefault();
     const newUser = $("cfgUser")?.value.trim();
@@ -592,7 +585,7 @@ $("authConfigForm")?.addEventListener("submit", e => {
     $("authConfigForm").reset();
 });
 
-// --- EXPORTAR E IMPORTAR RESPALDO ---
+// --- EXPORTACIÓN E IMPORTACIÓN DE RESPALDOS ---
 $("btnExportData")?.addEventListener("click", () => {
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(data, null, 2));
     const downloadAnchor = document.createElement("a");
@@ -629,6 +622,13 @@ $("btnImportData")?.addEventListener("change", e => {
     };
     reader.readAsText(file);
 });
+
+function renderDashboard(){ 
+    if($("statStudents")) $("statStudents").textContent=data.students.filter(s => s.status !== "Inactivo").length; 
+    if($("statPayments")) $("statPayments").textContent=data.abonos.length; 
+    if($("statRevenue")) $("statRevenue").textContent=money(data.abonos.reduce((s,a)=>s+a.amount,0)); 
+}
+
 function renderAll(){ 
     renderDashboard(); 
     renderStudents(); 

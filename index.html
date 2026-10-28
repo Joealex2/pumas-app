@@ -11,11 +11,14 @@
 <body>
   <div id="loginScreen" class="login-wrap">
     <div class="login-card">
-      <!-- LOGO LOGIN ACTUALIZADO -->
       <img src="img/Pum.png" alt="Logo Los Pumas" class="logo-img">
       <p class="eyebrow">CLUB DEPORTIVO FORMATIVO ESPECIALIZADO</p>
       <h1>LOS PUMAS</h1>
       <p class="muted">Sistema de gestión de alumnos y pagos</p>
+      
+      <!-- Aviso de error visible en Login -->
+      <div id="loginNotice" class="notice error hidden" style="margin-top: 15px;"></div>
+
       <form id="loginForm">
         <label for="loginUser">Usuario o correo</label>
         <input id="loginUser" autocomplete="username" required placeholder="Ingresa tu usuario">
@@ -23,14 +26,12 @@
         <input id="loginPass" type="password" autocomplete="current-password" required placeholder="Ingresa tu contraseña">
         <button class="primary full" type="submit">Ingresar</button>
       </form>
-      <p class="small muted">Modo de demostración: usuario <b>admin</b> y contraseña <b>pumas123</b>.</p>
     </div>
   </div>
 
   <div id="appShell" class="app-shell hidden">
     <aside class="sidebar">
       <div class="side-brand">
-        <!-- LOGO SIDEBAR ACTUALIZADO -->
         <img src="img/Pum.png" alt="Logo" class="logo-img-small">
         <div><b>LOS PUMAS</b><span>Gestión de pagos</span></div>
       </div>
@@ -41,15 +42,19 @@
         <button data-view="history" class="nav-item">▤ <span>Historiales</span></button>
         <button data-view="tariffs" class="nav-item">⚙ <span>Tarifas</span></button>
       </nav>
-      <div class="side-bottom"><span class="status-dot"></span> Prototipo V3<br><button id="logoutBtn" class="logout">Cerrar sesión ↗</button></div>
+      <div class="side-bottom">
+        <button id="logoutBtn" class="logout">Cerrar sesión ↗</button>
+      </div>
     </aside>
 
     <main class="main">
-      <header class="topbar"><div><p class="eyebrow">CLUB LOS PUMAS · TAEKWONDO</p><h2 id="pageTitle">Inicio</h2></div><div class="user-pill"><span class="avatar">A</span><span>Administrador</span></div></header>
+      <header class="topbar">
+        <div><p class="eyebrow">CLUB LOS PUMAS · TAEKWONDO</p><h2 id="pageTitle">Inicio</h2></div>
+        <div class="user-pill"><span class="avatar">A</span><span>Administrador</span></div>
+      </header>
       <div id="notice" class="notice hidden"></div>
 
       <section id="view-dashboard" class="view">
-        <!-- Banner fotográfico -->
         <div class="welcome panel banner-fotografico">
             <div class="welcome-content">
                 <p class="eyebrow light">CLUB DEPORTIVO LOS PUMAS</p>
@@ -63,7 +68,15 @@
           <article class="stat-card"><span class="stat-label">Abonos registrados</span><strong id="statPayments">0</strong><span class="stat-foot">Recibos emitidos</span></article>
           <article class="stat-card"><span class="stat-label">Recaudación total</span><strong id="statRevenue">$0.00</strong><span class="stat-foot">Ingresos</span></article>
         </div>
-        <div class="panel"><div class="section-head"><div><h3>Accesos rápidos</h3></div></div><div class="quick-grid"><button class="quick-card" data-go="students"><span class="quick-icon">♟</span><b>Agregar alumno</b></button><button class="quick-card" data-go="payment"><span class="quick-icon">＋</span><b>Registrar cobro</b></button><button class="quick-card" data-go="history"><span class="quick-icon">▤</span><b>Ver historial</b></button><button class="quick-card" data-go="tariffs"><span class="quick-icon">⚙</span><b>Editar tarifas</b></button></div></div>
+        <div class="panel">
+          <div class="section-head"><div><h3>Accesos rápidos</h3></div></div>
+          <div class="quick-grid">
+            <button class="quick-card" data-go="students"><span class="quick-icon">♟</span><b>Agregar alumno</b></button>
+            <button class="quick-card" data-go="payment"><span class="quick-icon">＋</span><b>Registrar cobro</b></button>
+            <button class="quick-card" data-go="history"><span class="quick-icon">▤</span><b>Ver historial</b></button>
+            <button class="quick-card" data-go="tariffs"><span class="quick-icon">⚙</span><b>Editar tarifas</b></button>
+          </div>
+        </div>
       </section>
 
       <section id="view-students" class="view hidden">
@@ -79,10 +92,7 @@
             <div><label for="studentRepPhone">Teléfono del representante *</label><input id="studentRepPhone" type="tel" required></div>
             <div><label for="studentPhone">Teléfono del alumno (opcional)</label><input id="studentPhone" type="tel"></div>
             <div><label for="studentGroup">Grupo *</label><select id="studentGroup" required><option value="Niños">Niños</option><option value="Jóvenes">Jóvenes</option></select></div>
-            
-            <!-- CAMPO ESTADO -->
             <div><label for="studentStatus">Estado en la academia *</label><select id="studentStatus" required><option value="Activo">Activo</option><option value="Inactivo">Inactivo</option></select></div>
-            
             <div class="form-actions span-two">
                 <button class="primary" type="submit" id="studentSubmitBtn">Guardar alumno</button>
                 <button class="secondary hidden" type="button" id="studentCancelEditBtn">Cancelar Edición</button>
@@ -92,7 +102,6 @@
         <div class="panel">
           <div class="section-head stack-mobile">
             <div><h3>Lista de alumnos</h3></div>
-            <!-- FILTRO POR ESTADO -->
             <div style="display: flex; gap: 10px;">
                 <select id="studentFilterStatus" class="search-input" style="width: auto;">
                     <option value="all">Todos los estados</option>
@@ -158,7 +167,8 @@
       </section>
 
       <section id="view-tariffs" class="view hidden">
-        <div class="panel"><div class="section-head"><div><h3>Configuración de tarifas base</h3></div></div>
+        <div class="panel">
+          <div class="section-head"><div><h3>Configuración de tarifas base</h3></div></div>
           <form id="tariffForm" class="form-grid">
             <div><label for="tariffNormal">Mensualidad normal ($)</label><input id="tariffNormal" type="number" min="0" step="0.01" required></div>
             <div><label for="tariffLate">Mensualidad con atraso ($)</label><input id="tariffLate" type="number" min="0" step="0.01" required></div>
@@ -169,6 +179,44 @@
             <div class="form-actions span-two"><button class="primary" type="submit">Guardar tarifas</button><button class="secondary" type="button" id="resetTariffs">Restablecer valores</button></div>
           </form>
         </div>
+
+        <div class="panel">
+          <div class="section-head">
+            <div>
+              <h3>Seguridad de acceso</h3>
+              <p class="muted">Cambia las credenciales de ingreso al sistema.</p>
+            </div>
+          </div>
+          <form id="authConfigForm" class="form-grid">
+            <div>
+              <label for="cfgUser">Nuevo usuario *</label>
+              <input id="cfgUser" required placeholder="Ej. maestro_galo">
+            </div>
+            <div>
+              <label for="cfgPass">Nueva contraseña *</label>
+              <input id="cfgPass" type="password" required placeholder="Mínimo 4 caracteres">
+            </div>
+            <div class="form-actions span-two">
+              <button class="primary" type="submit">Actualizar credenciales</button>
+            </div>
+          </form>
+        </div>
+
+        <div class="panel">
+          <div class="section-head">
+            <div>
+              <h3>Copia de seguridad y restauración</h3>
+              <p class="muted">Descarga un respaldo completo para proteger la información o restaurarla en otro equipo.</p>
+            </div>
+          </div>
+          <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: center;">
+            <button class="primary" type="button" id="btnExportData">📥 Descargar Respaldo (.json)</button>
+            <label class="secondary" style="margin:0; display:inline-flex; align-items:center; cursor:pointer;">
+              📤 Restaurar Respaldo
+              <input type="file" id="btnImportData" accept=".json" style="display: none;">
+            </label>
+          </div>
+        </div>
       </section>
     </main>
   </div>
@@ -176,13 +224,12 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="app.js"></script>
   
-  <!-- Motor de la PWA (Service Worker) corregido -->
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('./sw.js')
-          .then(registration => console.log('PWA Lista y registrada'))
-          .catch(err => console.log('Error en PWA: ', err));
+          .then(registration => console.log('PWA Lista'))
+          .catch(err => console.log('Error PWA: ', err));
       });
     }
   </script>
