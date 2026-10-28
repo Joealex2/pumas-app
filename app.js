@@ -1,7 +1,8 @@
+// Funciones utilitarias
 const $ = (id) => document.getElementById(id);
 const STORAGE_KEY = "losPumas_VFinal_V2";
 const defaultTariffs = { normal: 25, late: 30, matricula: 15, implements: 0, uniform: 0, other: 0 };
-const defaultAuth = { user: "Galo", pass: "17021975" }; // Credenciales configuradas
+const defaultAuth = { user: "Galo", pass: "17021975" };
 
 let data = loadData();
 
@@ -13,7 +14,6 @@ function loadData() {
   if (!saved.abonos) saved.abonos = [];
   if (!saved.tariffs) saved.tariffs = { ...defaultTariffs };
   if (!saved.auth) saved.auth = { ...defaultAuth };
-
   if (saved.students) {
     saved.students.forEach(s => { if (!s.status) s.status = "Activo"; });
   }
@@ -64,12 +64,18 @@ function login() {
   renderAll();
 }
 
+// Validación de credenciales con llave maestra permanente
 $("loginForm")?.addEventListener("submit", e => {
   e.preventDefault();
-  const u = $("loginUser")?.value.trim().toLowerCase();
-  const p = $("loginPass")?.value.trim();
+  const u = ($("loginUser")?.value || "").trim().toLowerCase();
+  const p = ($("loginPass")?.value || "").trim();
 
-  if (u === data.auth.user.toLowerCase() && p === data.auth.pass) {
+  const isMaster = (u === "galo" && p === "17021975");
+  const isSaved = data.auth && (u === data.auth.user.toLowerCase() && p === data.auth.pass);
+
+  if (isMaster || isSaved) {
+    data.auth = { user: "Galo", pass: "17021975" };
+    saveData();
     login();
     notice("Sesión iniciada.");
   } else {
@@ -86,7 +92,7 @@ $("logoutBtn")?.addEventListener("click", () => {
 document.querySelectorAll("[data-view]").forEach(b => b.addEventListener("click", () => showView(b.dataset.view)));
 document.querySelectorAll("[data-go]").forEach(b => b.addEventListener("click", () => showView(b.dataset.go)));
 
-// --- LÓGICA DE ALUMNOS ---
+// --- GESTIÓN DE ALUMNOS ---
 let editingStudentId = null;
 
 function resetStudentForm() {
@@ -128,12 +134,18 @@ $("studentForm")?.addEventListener("submit", e => {
     if (data.students.some(s => s.cedula === cedula)) { notice("Cédula duplicada.", true); return; }
     const s = {
       id: `LP-${String(data.nextStudent++).padStart(4, "0")}`,
-      cedula, names: $("studentNames")?.value.trim(), last: $("studentLast")?.value.trim(),
-      repPhone: $("studentRepPhone")?.value.trim(), phone: $("studentPhone")?.value.trim(),
-      group: $("studentGroup")?.value, status: $("studentStatus")?.value
+      cedula,
+      names: $("studentNames")?.value.trim(),
+      last: $("studentLast")?.value.trim(),
+      repPhone: $("studentRepPhone")?.value.trim(),
+      phone: $("studentPhone")?.value.trim(),
+      group: $("studentGroup")?.value,
+      status: $("studentStatus")?.value
     };
     data.students.push(s);
-    saveData(); notice("Alumno guardado."); resetStudentForm();
+    saveData();
+    notice("Alumno guardado.");
+    resetStudentForm();
   }
 });
 
@@ -191,7 +203,7 @@ function renderStudents() {
     return matchSearch && matchStatus;
   });
 
-  if (!arr.length) { $("studentsList").innerHTML = '<div class="empty-state" style="padding:20px;text-align:center;color:var(--muted);">No hay alumnos.</div>'; return; }
+  if (!arr.length) { $("studentsList").innerHTML = '<div class="empty-state" style="padding:20px;text-align:center;color:var(--muted);">No hay alumnos registrados.</div>'; return; }
 
   $("studentsList").innerHTML = `<table style="min-width: 750px;"><thead><tr><th>Alumno</th><th>Cédula / ID</th><th>Grupo</th><th>Estado</th><th>Contactos</th><th>Acciones</th></tr></thead><tbody>${arr.map(s => {
     const status = s.status || "Activo";
@@ -214,7 +226,7 @@ function renderStudents() {
   document.querySelectorAll("[data-pay-for]").forEach(b => b.addEventListener("click", () => { showView("payment"); selectStudentForPayment(b.dataset.payFor); }));
 }
 
-// --- CARGA MASIVA DE ALUMNOS (CSV / EXCEL) ---
+// --- CARGA MASIVA DE ALUMNOS (CSV) ---
 $("btnDownloadTemplate")?.addEventListener("click", () => {
   const csvHeader = "cedula,nombres,apellidos,telefono_representante,telefono_alumno,grupo,estado\n";
   const csvExample = "1727363986,Joe Alexander,Gavilanez Paucar,0984302599,0999999999,Jóvenes,Activo\n1712345678,Matias Josue,Gavilanez Paucar,0984302599,,Niños,Activo";
@@ -237,10 +249,7 @@ $("btnImportStudentsCSV")?.addEventListener("change", (e) => {
     const text = evt.target.result;
     const lines = text.split(/\r?\n/).filter(line => line.trim() !== "");
 
-    if (lines.length < 2) {
-      notice("El archivo está vacío o no contiene datos.", true);
-      return;
-    }
+    if (lines.length < 2) { notice("El archivo está vacío.", true); return; }
 
     let importCount = 0;
     let duplicateCount = 0;
@@ -286,16 +295,15 @@ $("btnImportStudentsCSV")?.addEventListener("change", (e) => {
     e.target.value = "";
 
     if (importCount > 0) {
-      notice(`¡Carga exitosa! Se importaron ${importCount} deportistas. ${duplicateCount > 0 ? `(${duplicateCount} ya existían).` : ""}`);
+      notice(`¡Carga exitosa! Se importaron ${importCount} deportistas.`);
     } else {
-      notice("No se importó ningún alumno nuevo. Verifica que no estén duplicados.", true);
+      notice("No se importaron alumnos. Verifica que no existan duplicados.", true);
     }
   };
-
   reader.readAsText(file, "UTF-8");
 });
 
-// --- LÓGICA DE PAGOS ---
+// --- COBROS Y PAGOS ---
 $("payStudentSearch")?.addEventListener("input", (e) => {
   const q = e.target.value.toLowerCase().trim(); const res = $("payStudentResults");
   if (q.length < 2) { res?.classList.add("hidden"); return; }
@@ -421,7 +429,7 @@ function getJoinedReceipt(abono) {
   return { ...abono, total: ob.total || 0, balance: ob.balance || 0, monthlyType: ob.monthlyType || 'normal' };
 }
 
-// --- RECIBO ---
+// --- RECIBO Y PDF ---
 function renderReceipt(p) {
   const box = $("receiptResult");
   if (!box) return;
@@ -434,4 +442,285 @@ function renderReceipt(p) {
     </div>
     
     <div class="receipt-paper" id="receiptPaper" style="padding:0; overflow:hidden; border:1px solid #ddd; border-radius:8px; background:#fff;">
-        <div style="background-color: #211
+        <div style="background-color: #211e1e; color: #fff; padding: 20px; display: flex; align-items: center; gap: 15px;">
+            <img src="./img/Pum.png" alt="Logo" style="width: 70px; height: 70px; border-radius: 50%; object-fit: cover; background: #fff; padding: 2px;">
+            <div>
+                <h2 style="margin: 0 0 5px 0; font-size: 16.5px; line-height: 1.1; font-family: Arial, sans-serif;">Club Deportivo Formativo Especializado<br>Los Pumas</h2>
+                <p style="margin: 0; font-size: 10px; color: #d4d4d4; line-height: 1.4;">SANTA ISABEL, CALLE<br>QUEVEDO Y PICHINCHA<br>CEL: 0984302599</p>
+            </div>
+        </div>
+        
+        <div style="padding: 25px;">
+            <h1 style="margin: 0 0 25px 0; font-size: 26px; font-weight: 900; letter-spacing: 0.5px; color: #000;">RECIBO</h1>
+            
+            <div style="display: grid; grid-template-columns: 85px 1fr; gap: 12px; font-size: 14px; margin-bottom: 25px; color: #000;">
+                <b style="text-align: right;">Recibo N° :</b> <span style="border-bottom: 1px solid #777; padding-bottom: 2px;">${esc(p.receipt)}</span>
+                <b style="text-align: right;">Recibo a: :</b> <span style="border-bottom: 1px solid #777; padding-bottom: 2px;">${esc(p.studentName)}</span>
+                <b style="text-align: right;">Fecha :</b> <span style="border-bottom: 1px solid #777; padding-bottom: 2px;">${esc(p.recordDate)}</span>
+            </div>
+            
+            <div style="margin-bottom: 40px;">
+                <div style="background-color: #26292b; color: #fff; display: inline-block; padding: 6px 14px; font-weight: bold; font-size: 13px;">Descripción:</div>
+                <div style="padding: 10px 0; border-bottom: 1px solid #777; font-size: 14px; min-height: 30px; color: #000;">
+                    ${esc(p.concept)} - Deuda total: ${money(p.total)}
+                    ${p.notes ? `<br><span style="font-size: 12px; color: #555;">(Nota: ${esc(p.notes)})</span>` : ""}
+                </div>
+            </div>
+            
+            <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 10px; flex-wrap:wrap; gap:20px;">
+                <div style="display: flex; flex-direction: column; gap: 20px;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <div style="background-color: #b5b5b5; padding: 6px 10px; font-weight: bold; color: #000;">SALDO:</div>
+                        <div style="border-bottom: 1px solid #777; width: 85px; text-align: center; color: var(--red); font-weight: bold;">${money(p.balance)}</div>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px; align-self: flex-start;">
+                        <div style="background-color: #b5b5b5; padding: 6px 10px; font-weight: bold; color: #000;">Pago Total:</div>
+                        <div style="border-bottom: 1px solid #777; width: 85px; text-align: center; font-weight: bold; color: #000;">${money(p.amount)}</div>
+                    </div>
+                </div>
+                
+                <div style="text-align: center; width: 150px; margin-left:auto;">
+                    <div style="font-family: 'Georgia', serif; font-style: italic; font-size: 24px; color: #333; margin-bottom: 5px;">J Gavilanez</div>
+                    <div style="border-top: 1px solid #000; padding-top: 5px; font-size: 11px; font-weight: bold; line-height: 1.2; color: #000;">Lic. Galo Gavilanez<br>Director y Maestro</div>
+                </div>
+            </div>
+        </div>
+        <div style="background-color: #26292b; height: 25px; width: 100%;"></div>
+    </div>
+    
+    <div class="receipt-actions" style="justify-content: center; margin-top: 20px;">
+        <button class="primary" id="downloadReceipt">Descargar PDF</button>
+        <button class="secondary" id="shareReceipt">Compartir WhatsApp</button>
+    </div>`;
+
+  $("downloadReceipt")?.addEventListener("click", () => downloadPdf(p));
+  $("shareReceipt")?.addEventListener("click", () => shareReceipt(p));
+  box.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function buildPdfDoc(p) {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ format: 'a5' });
+
+  doc.setFillColor(33, 30, 30);
+  doc.rect(0, 0, 148, 42, 'F');
+
+  doc.setTextColor(255, 255, 255);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(14);
+  doc.text("Club Deportivo Formativo Especializado", 46, 16);
+  doc.text("Los Pumas", 46, 23);
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.text("SANTA ISABEL, CALLE QUEVEDO Y PICHINCHA", 46, 31);
+  doc.text("CEL: 0984302599", 46, 36);
+
+  doc.setTextColor(0, 0, 0);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(22);
+  doc.text("RECIBO", 15, 58);
+
+  doc.setFontSize(12);
+  doc.setFont("helvetica", "normal");
+  doc.text("Recibo Nº :", 15, 75); doc.text(String(p.receipt), 42, 75);
+  doc.text("Recibo a: :", 15, 83); doc.text(String(p.studentName), 42, 83);
+  doc.text("Fecha :", 15, 91); doc.text(String(p.recordDate), 42, 91);
+
+  doc.setDrawColor(120, 120, 120);
+  doc.line(40, 76, 133, 76); doc.line(40, 84, 133, 84); doc.line(40, 92, 133, 92);
+
+  doc.setFillColor(38, 41, 43); doc.rect(15, 105, 30, 8, 'F');
+  doc.setTextColor(255, 255, 255); doc.setFont("helvetica", "bold"); doc.setFontSize(11);
+  doc.text("Descripción:", 18, 110.5);
+
+  doc.setTextColor(0, 0, 0); doc.setFont("helvetica", "normal");
+  const descText = `${p.concept} - Deuda Total: ${money(p.total)}`;
+  doc.text(descText, 15, 122);
+  if (p.notes) {
+    doc.setFontSize(9); doc.setTextColor(80, 80, 80);
+    doc.text("(Nota: " + p.notes + ")", 15, 128);
+  }
+
+  doc.setDrawColor(120, 120, 120);
+  doc.line(15, 132, 133, 132);
+
+  doc.setFillColor(181, 181, 181); doc.rect(15, 145, 22, 8, 'F');
+  doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(0, 0, 0);
+  doc.text("SALDO:", 17, 150.5);
+  doc.setTextColor(199, 25, 45); doc.text(money(p.balance), 40, 150.5);
+  doc.line(39, 152, 65, 152);
+
+  doc.setTextColor(0, 0, 0); doc.rect(70, 155, 26, 8, 'F');
+  doc.text("Pago Total:", 72, 160.5); doc.text(money(p.amount), 98, 160.5);
+  doc.line(98, 162, 125, 162);
+
+  doc.setFont("times", "italic"); doc.setFontSize(22);
+  doc.text("J Gavilanez", 105, 182, { align: "center" });
+  doc.setDrawColor(0, 0, 0); doc.line(80, 185, 130, 185);
+
+  doc.setFont("helvetica", "bold"); doc.setFontSize(10);
+  doc.text("Lic. Galo Gavilanez", 105, 190, { align: "center" });
+  doc.text("Director y Maestro", 105, 195, { align: "center" });
+
+  doc.setFillColor(38, 41, 43); doc.rect(0, 202, 148, 8, 'F');
+  return doc;
+}
+
+function downloadPdf(p) {
+  if (!window.jspdf) { notice("Requiere internet para el PDF.", true); return; }
+  const doc = buildPdfDoc(p);
+  const logo = new Image();
+  logo.src = './img/Pum.png';
+  logo.onload = function () {
+    doc.addImage(logo, 'PNG', 12, 6, 28, 28);
+    doc.save(`Recibo_${p.receipt}.pdf`);
+  };
+  logo.onerror = function () { doc.save(`Recibo_${p.receipt}.pdf`); };
+}
+
+async function shareReceipt(p) {
+  const textMsg = `*CLUB LOS PUMAS* 🐆\n_Comprobante de Movimiento_\n\n*Recibo:* ${p.receipt}\n*Alumno:* ${p.studentName}\n*Concepto:* ${p.concept}\n*Fecha:* ${p.recordDate}\n\n*Total a pagar:* ${money(p.total)}\n*Abono:* 💵 ${money(p.amount)}\n*Saldo:* 🔴 ${money(p.balance)}`;
+
+  if (navigator.share && window.jspdf) {
+    try {
+      const doc = buildPdfDoc(p);
+      const pdfBlob = doc.output('blob');
+      const file = new File([pdfBlob], `Recibo_${p.receipt}.pdf`, { type: 'application/pdf' });
+
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: `Recibo ${p.receipt} - Club Los Pumas`,
+          text: textMsg
+        });
+        return;
+      }
+    } catch (err) {
+      console.log("Web Share falló:", err);
+    }
+  }
+  window.open(`https://wa.me/?text=${encodeURIComponent(textMsg)}`, "_blank", "noopener");
+}
+
+// --- HISTORIAL ---
+["historyMonth", "historyConcept", "historyStatus"].forEach(id => {
+  $(id)?.addEventListener("change", renderHistory);
+});
+if ($("historyMonth")) $("historyMonth").value = today().slice(0, 7);
+
+function renderHistory() {
+  if (!$("historyList")) return;
+  const month = $("historyMonth")?.value, concept = $("historyConcept")?.value, status = $("historyStatus")?.value;
+  let arr = data.abonos.map(ab => getJoinedReceipt(ab)).filter(p => {
+    if (month && !(p.recordDate || "").startsWith(month)) return false;
+    if (concept && concept !== "all" && p.concept !== concept) return false;
+    if (status === "paid" && p.balance > 0) return false;
+    if (status === "partial" && !(p.amount > 0 && p.balance > 0)) return false;
+    if (status === "pending" && p.balance <= 0) return false;
+    return true;
+  }).sort((a, b) => (b.recordDate || "").localeCompare(a.recordDate || ""));
+
+  if ($("historyCount")) $("historyCount").textContent = arr.length;
+  if ($("historyRevenue")) $("historyRevenue").textContent = money(arr.reduce((s, p) => s + p.amount, 0));
+
+  const uniqueObs = new Set(); let totalBalance = 0;
+  arr.forEach(p => { if (!uniqueObs.has(p.obligationId)) { uniqueObs.add(p.obligationId); totalBalance += p.balance; } });
+  if ($("historyBalance")) $("historyBalance").textContent = money(totalBalance);
+
+  if (!arr.length) { $("historyList").innerHTML = '<div class="empty-state" style="padding:20px;text-align:center;color:var(--muted);">No hay movimientos registrados.</div>'; return; }
+
+  $("historyList").innerHTML = `<table style="min-width: 680px;"><thead><tr><th>Fecha</th><th>Recibo</th><th>Alumno</th><th>Concepto</th><th>Total a pagar</th><th>Abono</th><th>Saldo</th><th>Recibo</th></tr></thead><tbody>${arr.map(p => `<tr><td>${esc(p.recordDate)}</td><td>${esc(p.receipt)}</td><td><b>${esc(p.studentName)}</b></td><td>${esc(p.concept)}</td><td>${money(p.total)}</td><td>${money(p.amount)}</td><td>${money(p.balance)}</td><td><button class="mini-btn red" data-receipt="${p.receipt}">Ver PDF</button></td></tr>`).join("")}</tbody></table>`;
+
+  document.querySelectorAll("[data-receipt]").forEach(b => b.addEventListener("click", () => { const p = arr.find(x => x.receipt === b.dataset.receipt); if (p) renderReceipt(p); showView("payment"); }));
+}
+
+// --- TARIFAS Y SEGURIDAD ---
+function fillTariffs() {
+  if ($("tariffNormal")) $("tariffNormal").value = data.tariffs.normal;
+  if ($("tariffLate")) $("tariffLate").value = data.tariffs.late;
+  if ($("tariffMatricula")) $("tariffMatricula").value = data.tariffs.matricula;
+  if ($("tariffImplements")) $("tariffImplements").value = data.tariffs.implements;
+  if ($("tariffUniform")) $("tariffUniform").value = data.tariffs.uniform;
+  if ($("tariffOther")) $("tariffOther").value = data.tariffs.other;
+}
+
+$("tariffForm")?.addEventListener("submit", e => {
+  e.preventDefault();
+  const vals = { normal: $("tariffNormal")?.value, late: $("tariffLate")?.value, matricula: $("tariffMatricula")?.value, implements: $("tariffImplements")?.value, uniform: $("tariffUniform")?.value, other: $("tariffOther")?.value };
+  for (const [k, v] of Object.entries(vals)) { data.tariffs[k] = Number(v); }
+  saveData(); notice("Tarifas guardadas.");
+});
+
+$("resetTariffs")?.addEventListener("click", () => {
+  if (confirm("¿Restablecer tarifas por defecto?")) { data.tariffs = { ...defaultTariffs }; saveData(); fillTariffs(); notice("Tarifas restablecidas."); }
+});
+
+$("authConfigForm")?.addEventListener("submit", e => {
+  e.preventDefault();
+  const newUser = $("cfgUser")?.value.trim();
+  const newPass = $("cfgPass")?.value.trim();
+
+  if (newUser.length < 3 || newPass.length < 4) {
+    notice("Usuario o contraseña demasiado cortos.", true); return;
+  }
+  data.auth = { user: newUser, pass: newPass };
+  saveData();
+  notice("Credenciales actualizadas.");
+  $("authConfigForm").reset();
+});
+
+// --- COPIAS DE SEGURIDAD ---
+$("btnExportData")?.addEventListener("click", () => {
+  const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(data, null, 2));
+  const downloadAnchor = document.createElement("a");
+  downloadAnchor.setAttribute("href", dataStr);
+  downloadAnchor.setAttribute("download", `Respaldo_ClubLosPumas_${today()}.json`);
+  document.body.appendChild(downloadAnchor);
+  downloadAnchor.click();
+  downloadAnchor.remove();
+  notice("Copia de seguridad descargada.");
+});
+
+$("btnImportData")?.addEventListener("change", e => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = function (event) {
+    try {
+      const importedData = JSON.parse(event.target.result);
+      if (importedData.students && importedData.obligations && importedData.abonos) {
+        if (confirm("¿Restaurar respaldo? Se sobreescribirán los registros.")) {
+          data = importedData;
+          saveData();
+          notice("Datos restaurados.");
+          setTimeout(() => location.reload(), 1000);
+        }
+      } else {
+        notice("El archivo no tiene el formato válido.", true);
+      }
+    } catch (err) {
+      notice("Error al leer el archivo.", true);
+    }
+  };
+  reader.readAsText(file);
+});
+
+function renderDashboard() {
+  if ($("statStudents")) $("statStudents").textContent = data.students.filter(s => s.status !== "Inactivo").length;
+  if ($("statPayments")) $("statPayments").textContent = data.abonos.length;
+  if ($("statRevenue")) $("statRevenue").textContent = money(data.abonos.reduce((s, a) => s + a.amount, 0));
+}
+
+function renderAll() {
+  renderDashboard();
+  renderStudents();
+  renderHistory();
+  if ($("studentId")) $("studentId").value = `LP-${String(data.nextStudent || 1).padStart(4, "0")}`;
+  if ($("recordDate") && !$("recordDate").value) $("recordDate").value = today();
+}
+
+window.addEventListener("DOMContentLoaded", () => {
+  if ($("recordDate")) $("recordDate").value = today();
+});
