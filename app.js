@@ -51,7 +51,9 @@ function showView(name) {
   document.querySelectorAll(".view").forEach(v => v.classList.add("hidden"));
   const v = $("view-" + name);
   if (v) v.classList.remove("hidden");
-  document.querySelectorAll(".nav-item").forEach(b => b.classList.toggle("active", b.dataset.view === name));
+  document.querySelectorAll(".nav-item").forEach(b => {
+    if (b.dataset.view) b.classList.toggle("active", b.dataset.view === name);
+  });
   if (name === "payment") resetPaymentFormToNew();
   if (name === "history") renderHistory();
   if (name === "tariffs") fillTariffs();
@@ -62,6 +64,13 @@ function login() {
   $("appShell")?.classList.remove("hidden");
   showView("dashboard");
   renderAll();
+}
+
+function doLogout() {
+  $("appShell")?.classList.add("hidden");
+  $("loginScreen")?.classList.remove("hidden");
+  if ($("loginPass")) $("loginPass").value = "";
+  notice("Sesión cerrada.");
 }
 
 // Validación de credenciales con llave maestra permanente
@@ -83,11 +92,10 @@ $("loginForm")?.addEventListener("submit", e => {
   }
 });
 
-$("logoutBtn")?.addEventListener("click", () => {
-  $("appShell")?.classList.add("hidden");
-  $("loginScreen")?.classList.remove("hidden");
-  if ($("loginPass")) $("loginPass").value = "";
-});
+// Cerrar sesión desde escritorio, barra superior o menú móvil
+$("logoutBtn")?.addEventListener("click", doLogout);
+$("topbarLogoutBtn")?.addEventListener("click", doLogout);
+$("logoutBtnNav")?.addEventListener("click", doLogout);
 
 document.querySelectorAll("[data-view]").forEach(b => b.addEventListener("click", () => showView(b.dataset.view)));
 document.querySelectorAll("[data-go]").forEach(b => b.addEventListener("click", () => showView(b.dataset.go)));
@@ -429,6 +437,11 @@ function getJoinedReceipt(abono) {
   return { ...abono, total: ob.total || 0, balance: ob.balance || 0, monthlyType: ob.monthlyType || 'normal' };
 }
 
+// Generar mensaje detallado para WhatsApp
+function getReceiptMessage(p) {
+  return `*CLUB LOS PUMAS* 🐆\n_Comprobante de Movimiento_\n\n*Recibo:* ${p.receipt}\n*Alumno:* ${p.studentName}\n*Concepto:* ${p.concept}\n*Fecha:* ${p.recordDate}\n\n*Total a pagar:* ${money(p.total)}\n*Abono:* 💵 ${money(p.amount)}\n*Saldo pendiente:* 🔴 ${money(p.balance)}${p.notes ? `\n*Nota:* ${p.notes}` : ''}`;
+}
+
 // --- RECIBO Y PDF ---
 function renderReceipt(p) {
   const box = $("receiptResult");
@@ -488,13 +501,15 @@ function renderReceipt(p) {
         <div style="background-color: #26292b; height: 25px; width: 100%;"></div>
     </div>
     
-    <div class="receipt-actions" style="justify-content: center; margin-top: 20px;">
-        <button class="primary" id="downloadReceipt">Descargar PDF</button>
-        <button class="secondary" id="shareReceipt">Compartir WhatsApp</button>
+    <div class="receipt-actions" style="margin-top: 20px;">
+        <button class="secondary" id="downloadReceipt">📥 Descargar PDF</button>
+        <button class="primary" id="shareReceiptPdf">📄 Compartir PDF WhatsApp</button>
+        <button class="secondary btn-whatsapp-green" id="sendWhatsappText">💬 Enviar Mensaje WhatsApp</button>
     </div>`;
 
   $("downloadReceipt")?.addEventListener("click", () => downloadPdf(p));
-  $("shareReceipt")?.addEventListener("click", () => shareReceipt(p));
+  $("shareReceiptPdf")?.addEventListener("click", () => shareReceiptPdf(p));
+  $("sendWhatsappText")?.addEventListener("click", () => sendWhatsappMessage(p));
   box.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
@@ -579,8 +594,17 @@ function downloadPdf(p) {
   logo.onerror = function () { doc.save(`Recibo_${p.receipt}.pdf`); };
 }
 
-async function shareReceipt(p) {
-  const textMsg = `*CLUB LOS PUMAS* 🐆\n_Comprobante de Movimiento_\n\n*Recibo:* ${p.receipt}\n*Alumno:* ${p.studentName}\n*Concepto:* ${p.concept}\n*Fecha:* ${p.recordDate}\n\n*Total a pagar:* ${money(p.total)}\n*Abono:* 💵 ${money(p.amount)}\n*Saldo:* 🔴 ${money(p.balance)}`;
+// 1. Compartir el PDF físico + copiar el texto al portapapeles
+async function shareReceiptPdf(p) {
+  const textMsg = getReceiptMessage(p);
+
+  // Copiar automáticamente el texto al portapapeles por comodidad del maestro
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    try {
+      await navigator.clipboard.writeText(textMsg.replace(/\\n/g, '\n'));
+      notice("📋 Resumen copiado. Abriendo WhatsApp con el PDF...");
+    } catch (e) {}
+  }
 
   if (navigator.share && window.jspdf) {
     try {
@@ -597,10 +621,30 @@ async function shareReceipt(p) {
         return;
       }
     } catch (err) {
-      console.log("Web Share falló:", err);
+      console.log("Web Share nativo falló:", err);
     }
   }
-  window.open(`https://wa.me/?text=${encodeURIComponent(textMsg)}`, "_blank", "noopener");
+
+  // Si no soporta compartir archivo directo, abre el texto
+  sendWhatsappMessage(p);
+}
+
+// 2. Enviar el mensaje de texto estructurado directo a WhatsApp
+function sendWhatsappMessage(p) {
+  const textMsg = getReceiptMessage(p);
+  const s = data.students.find(x => x.id === p.studentId);
+  const targetPhone = s && (s.repPhone || s.phone) ? (s.repPhone || s.phone).replace(/\D/g, '') : '';
+
+  let waUrl = '';
+  if (targetPhone.length >= 9) {
+    // Si empieza con 09..., agregar prefijo de Ecuador (593)
+    const intlPhone = targetPhone.startsWith('0') ? '593' + targetPhone.substring(1) : (targetPhone.startsWith('593') ? targetPhone : '593' + targetPhone);
+    waUrl = `https://wa.me/${intlPhone}?text=${encodeURIComponent(textMsg.replace(/\\n/g, '\n'))}`;
+  } else {
+    waUrl = `https://wa.me/?text=${encodeURIComponent(textMsg.replace(/\\n/g, '\n'))}`;
+  }
+
+  window.open(waUrl, "_blank", "noopener");
 }
 
 // --- HISTORIAL ---
