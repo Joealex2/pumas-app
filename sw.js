@@ -1,11 +1,11 @@
-const CACHE_NAME = 'pumas-cache-v4';
+const CACHE_NAME = 'pumas-final-v5';
 const ASSETS = [
-  '/pumas-app/',
-  '/pumas-app/index.html',
-  '/pumas-app/styles.css?v=4',
-  '/pumas-app/app.js?v=4',
-  '/pumas-app/manifest.json',
-  '/pumas-app/img/Pum.png'
+  './',
+  './index.html',
+  './styles.css',
+  './app.js',
+  './manifest.json',
+  './img/Pum.png'
 ];
 
 self.addEventListener('install', event => {
@@ -25,6 +25,6 @@ self.addEventListener('activate', event => {
 
 self.addEventListener('fetch', event => {
   event.respondWith(
-    caches.match(event.request).then(cached => cached || fetch(event.request))
+    fetch(event.request).catch(() => caches.match(event.request))
   );
 });
