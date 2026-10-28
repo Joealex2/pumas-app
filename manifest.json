@@ -2,23 +2,30 @@
   "name": "Club Los Pumas | Gestión",
   "short_name": "Los Pumas",
   "description": "Sistema de gestión de alumnos y pagos Club Los Pumas",
-  "start_url": "./index.html",
+  "start_url": "/pumas-app/",
+  "scope": "/pumas-app/",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#c7192d",
   "orientation": "portrait-primary",
   "icons": [
     {
-      "src": "img/Pum.png",
+      "src": "/pumas-app/img/Pum.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
-      "src": "img/Pum.png",
+      "src": "/pumas-app/img/Pum.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/pumas-app/img/Pum.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }
