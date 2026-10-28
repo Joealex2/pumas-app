@@ -40,16 +40,23 @@
         <button data-view="payment" class="nav-item">＋ <span>Registrar movimiento</span></button>
         <button data-view="history" class="nav-item">▤ <span>Historiales</span></button>
         <button data-view="tariffs" class="nav-item">⚙ <span>Tarifas</span></button>
+        <button id="logoutBtnNav" class="nav-item nav-logout mobile-only">🚪 <span>Cerrar sesión</span></button>
       </nav>
-      <div class="side-bottom">
+      <div class="side-bottom desktop-only">
         <button id="logoutBtn" class="logout">Cerrar sesión ↗</button>
       </div>
     </aside>
 
     <main class="main">
       <header class="topbar">
-        <div><p class="eyebrow">CLUB ESPECIALIZADO FORMATIVO LOS PUMAS</p><h2 id="pageTitle">Inicio</h2></div>
-        <div class="user-pill"><span class="avatar">A</span><span>Galo Gavilanez</span></div>
+        <div>
+          <p class="eyebrow">CLUB ESPECIALIZADO FORMATIVO LOS PUMAS</p>
+          <h2 id="pageTitle">Inicio</h2>
+        </div>
+        <div class="topbar-right">
+          <div class="user-pill"><span class="avatar">A</span><span>Galo Gavilanez</span></div>
+          <button id="topbarLogoutBtn" class="mini-btn logout-pill" title="Cerrar sesión">Salir ↗</button>
+        </div>
       </header>
       <div id="notice" class="notice hidden"></div>
 
