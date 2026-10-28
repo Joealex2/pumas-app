@@ -1,3 +1,4 @@
+/* Paleta oficial Los Pumas */
 :root {
   --red: #c7192d;
   --red-dark: #a41327;
@@ -7,6 +8,8 @@
   --line: #e2e8f0;
   --text: #1a202c;
   --muted: #718096;
+  --green: #177344;
+  --green-bg: #e6f7ed;
 }
 
 * {
@@ -141,6 +144,11 @@ nav#mainNav {
   font-weight: 600;
 }
 
+.nav-logout {
+  color: #fca5a5 !important;
+  border: 1px solid rgba(239, 68, 68, 0.3) !important;
+}
+
 .side-bottom {
   padding: 15px;
   border-top: 1px solid rgba(255,255,255,0.08);
@@ -155,6 +163,11 @@ nav#mainNav {
   border-radius: 6px;
   cursor: pointer;
   font-size: 13px;
+  transition: background 0.2s;
+}
+.logout:hover {
+  background: rgba(255,255,255,0.1);
+  color: #fff;
 }
 
 /* Área Principal */
@@ -167,11 +180,17 @@ nav#mainNav {
 
 .topbar {
   background: var(--surface);
-  padding: 16px 24px;
+  padding: 14px 24px;
   border-bottom: 1px solid var(--line);
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .eyebrow {
@@ -190,9 +209,9 @@ nav#mainNav {
 .user-pill {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   background: #edf2f7;
-  padding: 6px 14px;
+  padding: 6px 12px;
   border-radius: 20px;
   font-size: 13px;
   font-weight: 600;
@@ -208,6 +227,20 @@ nav#mainNav {
   align-items: center;
   justify-content: center;
   font-size: 12px;
+}
+
+.logout-pill {
+  background: #fff;
+  border: 1px solid #fed7d7;
+  color: var(--red);
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.logout-pill:hover {
+  background: #fde7e9;
 }
 
 .view {
@@ -561,13 +594,41 @@ th {
 
 .receipt-actions {
   display: flex;
-  gap: 12px;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 20px;
+}
+
+.btn-whatsapp-green {
+  background-color: #25D366 !important;
+  color: #fff !important;
+  border: none !important;
+}
+.btn-whatsapp-green:hover {
+  background-color: #20bd5a !important;
+}
+
+.desktop-only {
+  display: block;
+}
+
+.mobile-only {
+  display: none !important;
 }
 
 /* ========================================================
    REGLAS RESPONSIVAS EXCLUSIVAS PARA CELULARES
 ======================================================== */
 @media (max-width: 768px) {
+  .desktop-only {
+    display: none !important;
+  }
+
+  .mobile-only {
+    display: flex !important;
+  }
+
   .app-shell {
     flex-direction: column;
   }
@@ -583,10 +644,6 @@ th {
   .side-brand {
     padding: 10px 14px;
     justify-content: space-between;
-  }
-
-  .side-bottom {
-    display: none;
   }
 
   nav#mainNav {
@@ -606,7 +663,25 @@ th {
   }
 
   .topbar {
-    padding: 12px 16px;
+    padding: 10px 14px;
+  }
+
+  .topbar-right {
+    gap: 6px;
+  }
+
+  .user-pill {
+    padding: 4px 8px;
+    font-size: 12px;
+  }
+
+  .user-pill span:not(.avatar) {
+    display: none;
+  }
+
+  .logout-pill {
+    padding: 5px 10px;
+    font-size: 12px;
   }
 
   .view {
@@ -654,6 +729,7 @@ th {
 
   .receipt-actions {
     flex-direction: column;
+    width: 100%;
   }
 
   .receipt-actions button {
