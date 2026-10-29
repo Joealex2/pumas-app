@@ -1,6 +1,6 @@
 // Funciones utilitarias
 const $ = (id) => document.getElementById(id);
-const STORAGE_KEY = "losPumas_VFinal_V6";
+const STORAGE_KEY = "losPumas_VFinal_V7";
 const defaultTariffs = { normal: 25, late: 30, matricula: 15, implements: 0, uniform: 0, other: 0 };
 
 let data = loadData();
@@ -239,7 +239,7 @@ $("btnImportStudentsCSV")?.addEventListener("change", (e) => {
   reader.readAsText(file, "UTF-8");
 });
 
-// --- COBROS Y PAGOS ---
+// --- COBROS Y PAGOS DIRECTOS (SIN OBLIGACIONES PREVIAS) ---
 $("payStudentSearch")?.addEventListener("input", (e) => {
   const q = e.target.value.toLowerCase().trim(); const res = $("payStudentResults");
   if (q.length < 2) { res?.classList.add("hidden"); return; }
@@ -256,7 +256,6 @@ $("payStudentClear")?.addEventListener("click", () => {
   if ($("payStudentSearch")) $("payStudentSearch").value = "";
   $("payStudentSearch")?.classList.remove("hidden");
   $("payStudentSelected")?.classList.add("hidden");
-  $("pendingObligationsWrap")?.classList.add("hidden");
   resetPaymentFormToNew();
 });
 
@@ -266,35 +265,12 @@ function selectStudentForPayment(studentId) {
   $("payStudentSearch")?.classList.add("hidden"); $("payStudentResults")?.classList.add("hidden");
   $("payStudentSelected")?.classList.remove("hidden");
   if ($("payStudentName")) $("payStudentName").textContent = `${s.names} ${s.last}`;
-
-  const pending = data.obligations.filter(o => o.studentId === studentId && o.balance > 0);
-  if (pending.length > 0) {
-    $("pendingObligationsWrap")?.classList.remove("hidden");
-    if ($("pendingObligationsList")) $("pendingObligationsList").innerHTML = pending.map(o => `<div class="pending-item"><div><b>${esc(o.concept)}</b> - Deuda: ${money(o.total)}</div><div><b style="color:var(--red);margin-right:10px">Saldo: ${money(o.balance)}</b> <button type="button" class="mini-btn red" onclick="fillPaymentFormForObligation('${o.id}')">Abonar</button></div></div>`).join("");
-  } else { $("pendingObligationsWrap")?.classList.add("hidden"); }
   resetPaymentFormToNew();
 }
 
 function resetPaymentFormToNew() {
-  if ($("payObligationId")) $("payObligationId").value = "";
-  if ($("payConcept")) $("payConcept").disabled = false;
-  if ($("monthlyType")) $("monthlyType").disabled = false;
-  if ($("payAmount")) $("payAmount").readOnly = false;
-  if ($("formModeLabel")) $("formModeLabel").textContent = "Crear nueva obligación y abonar";
   if ($("payConcept")) updateSuggestedAmount();
 }
-
-window.fillPaymentFormForObligation = function (obId) {
-  const ob = data.obligations.find(o => o.id === obId); if (!ob) return;
-  if ($("payObligationId")) $("payObligationId").value = ob.id;
-  if ($("payConcept")) { $("payConcept").value = ob.concept; $("payConcept").disabled = true; }
-  if ($("monthlyType")) { $("monthlyType").value = ob.monthlyType || "normal"; $("monthlyType").disabled = true; }
-  if ($("payAmount")) { $("payAmount").value = ob.total.toFixed(2); $("payAmount").readOnly = true; }
-  if ($("payAbono")) $("payAbono").value = ob.balance.toFixed(2);
-  if ($("formModeLabel")) $("formModeLabel").textContent = "Abonar a deuda existente";
-  updateBalance();
-  if ($("paymentForm")) window.scrollTo({ top: $("paymentForm").offsetTop, behavior: "smooth" });
-};
 
 function tariffFor(concept, type) {
   if (concept === "Mensualidad") return type === "late" ? data.tariffs.late : data.tariffs.normal;
@@ -305,10 +281,11 @@ function tariffFor(concept, type) {
 }
 
 function updateSuggestedAmount() {
-  if ($("payObligationId")?.value !== "") return;
   const concept = $("payConcept")?.value;
   $("monthlyTypeWrap")?.classList.toggle("hidden", concept !== "Mensualidad");
-  if ($("payAmount")) $("payAmount").value = Number(tariffFor(concept, $("monthlyType")?.value)).toFixed(2);
+  const suggested = Number(tariffFor(concept, $("monthlyType")?.value)).toFixed(2);
+  if ($("payAmount")) $("payAmount").value = suggested;
+  if ($("payAbono")) $("payAbono").value = suggested;
   updateBalance();
 }
 
@@ -325,7 +302,6 @@ function updateBalance() {
 
 $("paymentForm")?.addEventListener("reset", () => setTimeout(() => {
   if ($("recordDate")) $("recordDate").value = today();
-  if ($("payAbono")) $("payAbono").value = "";
   resetPaymentFormToNew();
 }, 0));
 
@@ -337,27 +313,21 @@ $("paymentForm")?.addEventListener("submit", e => {
   if (!Number.isFinite(total) || total < 0 || !Number.isFinite(abono) || abono < 0) { notice("Valores inválidos.", true); return; }
 
   const s = data.students.find(x => x.id === studentId);
-  const isExisting = $("payObligationId")?.value !== "";
-  let obId = $("payObligationId")?.value;
+  const balance = Math.max(0, total - abono);
 
-  if (!isExisting) {
-    if (abono > total) { notice("El abono no puede superar el total.", true); return; }
-    obId = `OB-${String(data.nextObligation++).padStart(5, "0")}`;
-    data.obligations.push({ id: obId, studentId: s.id, concept: $("payConcept")?.value, monthlyType: $("monthlyType")?.value, total: total, balance: Math.max(0, total - abono), created: $("recordDate")?.value });
-  } else {
-    const ob = data.obligations.find(o => o.id === obId);
-    if (abono > ob.balance) { notice("Abono supera el saldo pendiente.", true); return; }
-    ob.balance = Math.max(0, ob.balance - abono);
-  }
+  // Crear obligación automática para control contable interno
+  const obId = `OB-${String(data.nextObligation++).padStart(5, "0")}`;
+  data.obligations.push({ id: obId, studentId: s.id, concept: $("payConcept")?.value, monthlyType: $("monthlyType")?.value, total: total, balance: balance, created: $("recordDate")?.value });
 
   const cleanDate = ($("recordDate")?.value || today()).trim();
   const p = { receipt: `LP-${String(data.nextReceipt++).padStart(6, "0")}`, obligationId: obId, studentId: s.id, studentName: `${s.names} ${s.last}`, cedula: s.cedula, concept: $("payConcept")?.value, recordDate: cleanDate, amount: abono, notes: $("payNotes")?.value.trim() };
   data.abonos.push(p);
+  
   saveData();
   e.target.reset();
   $("payStudentClear")?.click();
   renderReceipt(getJoinedReceipt(p));
-  notice("Registrado correctamente.");
+  notice("Recibo registrado correctamente.");
 });
 
 function getJoinedReceipt(abono) {
@@ -560,7 +530,7 @@ function sendWhatsappMessage(p) {
   window.open(waUrl, "_blank", "noopener");
 }
 
-// --- HISTORIAL CON BUSCADOR DE ALUMNO Y MES OPCIONAL ---
+// --- HISTORIAL CON BUSCADOR DE ALUMNO Y CONTEO TOTAL DE RECIBOS ---
 let historySelectedStudentId = "all";
 
 $("historyStudentSearch")?.addEventListener("input", (e) => {
@@ -607,11 +577,9 @@ $("historyStudentClear")?.addEventListener("click", () => {
   $(id)?.addEventListener("change", renderHistory);
 });
 
-// Nota: Ya no se autoselecciona el mes actual por defecto para permitir ver todo el historial general libremente.
-
 function renderHistory() {
   if (!$("historyList")) return;
-  const month = $("historyMonth")?.value; // Si está vacío, se muestran todos los meses
+  const month = $("historyMonth")?.value; // Si está vacío, se muestran todos los recibos de todos los meses
   const concept = $("historyConcept")?.value;
   const status = $("historyStatus")?.value;
   const studentFilter = historySelectedStudentId;
@@ -626,6 +594,7 @@ function renderHistory() {
     return true;
   }).sort((a, b) => (b.recordDate || "").localeCompare(a.recordDate || ""));
 
+  // Conteo total de recibos filtrados o del alumno seleccionado
   if ($("historyCount")) $("historyCount").textContent = arr.length;
   if ($("historyRevenue")) $("historyRevenue").textContent = money(arr.reduce((s, p) => s + p.amount, 0));
 
@@ -633,7 +602,7 @@ function renderHistory() {
   arr.forEach(p => { if (!uniqueObs.has(p.obligationId)) { uniqueObs.add(p.obligationId); totalBalance += p.balance; } });
   if ($("historyBalance")) $("historyBalance").textContent = money(totalBalance);
 
-  if (!arr.length) { $("historyList").innerHTML = '<div class="empty-state" style="padding:20px;text-align:center;color:var(--muted);">No hay movimientos registrados con los filtros seleccionados.</div>'; return; }
+  if (!arr.length) { $("historyList").innerHTML = '<div class="empty-state" style="padding:20px;text-align:center;color:var(--muted);">No hay recibos registrados con los filtros seleccionados.</div>'; return; }
 
   $("historyList").innerHTML = `<table style="min-width: 750px;"><thead><tr><th>Fecha</th><th>Recibo</th><th>Alumno</th><th>Concepto</th><th>Abono</th><th>Saldo</th><th>Acciones</th></tr></thead><tbody>${arr.map(p => `<tr>
     <td>${esc(p.recordDate)}</td>
@@ -653,7 +622,7 @@ function renderHistory() {
   document.querySelectorAll("[data-receipt]").forEach(b => b.addEventListener("click", () => { const p = arr.find(x => x.receipt === b.dataset.receipt); if (p) renderReceipt(p); showView("payment"); }));
 }
 
-// Función para eliminar un recibo/abono por error y devolver el saldo a la obligación
+// Función para eliminar un recibo/abono y reajustar saldo
 window.deleteReceipt = function(receiptNum) {
   if (!confirm(`¿Estás seguro de eliminar el comprobante ${receiptNum}? Esta acción devolverá el monto abonado a la deuda pendiente.`)) return;
 
