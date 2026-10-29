@@ -1,19 +1,17 @@
 // Funciones utilitarias
 const $ = (id) => document.getElementById(id);
-const STORAGE_KEY = "losPumas_VFinal_V5";
+const STORAGE_KEY = "losPumas_VFinal_V6";
 const defaultTariffs = { normal: 25, late: 30, matricula: 15, implements: 0, uniform: 0, other: 0 };
-const defaultAuth = { user: "Galo", pass: "17021975" };
 
 let data = loadData();
 
 function loadData() {
   let saved;
   try { saved = JSON.parse(localStorage.getItem(STORAGE_KEY)); } catch (e) {}
-  if (!saved) return { students: [], obligations: [], abonos: [], tariffs: { ...defaultTariffs }, auth: { ...defaultAuth }, nextStudent: 1, nextReceipt: 1, nextObligation: 1 };
+  if (!saved) return { students: [], obligations: [], abonos: [], tariffs: { ...defaultTariffs }, nextStudent: 1, nextReceipt: 1, nextObligation: 1 };
   if (!saved.obligations) saved.obligations = [];
   if (!saved.abonos) saved.abonos = [];
   if (!saved.tariffs) saved.tariffs = { ...defaultTariffs };
-  if (!saved.auth) saved.auth = { ...defaultAuth };
   if (saved.students) {
     saved.students.forEach(s => { if (!s.status) s.status = "Activo"; });
   }
@@ -39,14 +37,6 @@ function notice(msg, error = false) {
   setTimeout(() => n.classList.add("hidden"), 4000);
 }
 
-function showLoginError(msg) {
-  const ln = $("loginNotice");
-  if (!ln) return;
-  ln.textContent = msg;
-  ln.classList.remove("hidden");
-  setTimeout(() => ln.classList.add("hidden"), 4000);
-}
-
 function showView(name) {
   document.querySelectorAll(".view").forEach(v => v.classList.add("hidden"));
   const v = $("view-" + name);
@@ -59,42 +49,12 @@ function showView(name) {
   if (name === "tariffs") fillTariffs();
 }
 
-function login() {
-  $("loginScreen")?.classList.add("hidden");
-  $("appShell")?.classList.remove("hidden");
+// Acceso directo automático sin pantalla de login
+window.addEventListener("DOMContentLoaded", () => {
   showView("dashboard");
   renderAll();
-}
-
-function doLogout() {
-  $("appShell")?.classList.add("hidden");
-  $("loginScreen")?.classList.remove("hidden");
-  if ($("loginPass")) $("loginPass").value = "";
-  notice("Sesión cerrada.");
-}
-
-// Validación de credenciales con llave maestra permanente
-$("loginForm")?.addEventListener("submit", e => {
-  e.preventDefault();
-  const u = ($("loginUser")?.value || "").trim().toLowerCase();
-  const p = ($("loginPass")?.value || "").trim();
-
-  const isMaster = (u === "galo" && p === "17021975");
-  const isSaved = data.auth && (u === data.auth.user.toLowerCase() && p === data.auth.pass);
-
-  if (isMaster || isSaved) {
-    data.auth = { user: "Galo", pass: "17021975" };
-    saveData();
-    login();
-    notice("Sesión iniciada.");
-  } else {
-    showLoginError("Usuario o contraseña incorrectos.");
-  }
+  if ($("recordDate")) $("recordDate").value = today();
 });
-
-// Cerrar sesión desde escritorio o menú móvil
-$("logoutBtn")?.addEventListener("click", doLogout);
-$("logoutBtnNav")?.addEventListener("click", doLogout);
 
 document.querySelectorAll("[data-view]").forEach(b => b.addEventListener("click", () => showView(b.dataset.view)));
 document.querySelectorAll("[data-go]").forEach(b => b.addEventListener("click", () => showView(b.dataset.go)));
@@ -600,7 +560,7 @@ function sendWhatsappMessage(p) {
   window.open(waUrl, "_blank", "noopener");
 }
 
-// --- HISTORIAL CON BUSCADOR DE ALUMNO INTERACTIVO ---
+// --- HISTORIAL CON BUSCADOR DE ALUMNO Y MES OPCIONAL ---
 let historySelectedStudentId = "all";
 
 $("historyStudentSearch")?.addEventListener("input", (e) => {
@@ -646,11 +606,12 @@ $("historyStudentClear")?.addEventListener("click", () => {
 ["historyMonth", "historyConcept", "historyStatus"].forEach(id => {
   $(id)?.addEventListener("change", renderHistory);
 });
-if ($("historyMonth")) $("historyMonth").value = today().slice(0, 7);
+
+// Nota: Ya no se autoselecciona el mes actual por defecto para permitir ver todo el historial general libremente.
 
 function renderHistory() {
   if (!$("historyList")) return;
-  const month = $("historyMonth")?.value;
+  const month = $("historyMonth")?.value; // Si está vacío, se muestran todos los meses
   const concept = $("historyConcept")?.value;
   const status = $("historyStatus")?.value;
   const studentFilter = historySelectedStudentId;
@@ -672,7 +633,7 @@ function renderHistory() {
   arr.forEach(p => { if (!uniqueObs.has(p.obligationId)) { uniqueObs.add(p.obligationId); totalBalance += p.balance; } });
   if ($("historyBalance")) $("historyBalance").textContent = money(totalBalance);
 
-  if (!arr.length) { $("historyList").innerHTML = '<div class="empty-state" style="padding:20px;text-align:center;color:var(--muted);">No hay movimientos registrados.</div>'; return; }
+  if (!arr.length) { $("historyList").innerHTML = '<div class="empty-state" style="padding:20px;text-align:center;color:var(--muted);">No hay movimientos registrados con los filtros seleccionados.</div>'; return; }
 
   $("historyList").innerHTML = `<table style="min-width: 750px;"><thead><tr><th>Fecha</th><th>Recibo</th><th>Alumno</th><th>Concepto</th><th>Abono</th><th>Saldo</th><th>Acciones</th></tr></thead><tbody>${arr.map(p => `<tr>
     <td>${esc(p.recordDate)}</td>
@@ -712,7 +673,7 @@ window.deleteReceipt = function(receiptNum) {
   notice("Comprobante eliminado y saldo restituido correctamente.");
 };
 
-// --- TARIFAS Y SEGURIDAD ---
+// --- TARIFAS ---
 function fillTariffs() {
   if ($("tariffNormal")) $("tariffNormal").value = data.tariffs.normal;
   if ($("tariffLate")) $("tariffLate").value = data.tariffs.late;
@@ -731,20 +692,6 @@ $("tariffForm")?.addEventListener("submit", e => {
 
 $("resetTariffs")?.addEventListener("click", () => {
   if (confirm("¿Restablecer tarifas por defecto?")) { data.tariffs = { ...defaultTariffs }; saveData(); fillTariffs(); notice("Tarifas restablecidas."); }
-});
-
-$("authConfigForm")?.addEventListener("submit", e => {
-  e.preventDefault();
-  const newUser = $("cfgUser")?.value.trim();
-  const newPass = $("cfgPass")?.value.trim();
-
-  if (newUser.length < 3 || newPass.length < 4) {
-    notice("Usuario o contraseña demasiado cortos.", true); return;
-  }
-  data.auth = { user: newUser, pass: newPass };
-  saveData();
-  notice("Credenciales actualizadas.");
-  $("authConfigForm").reset();
 });
 
 // --- COPIAS DE SEGURIDAD ---
@@ -797,7 +744,3 @@ function renderAll() {
   if ($("studentId")) $("studentId").value = `LP-${String(data.nextStudent || 1).padStart(4, "0")}`;
   if ($("recordDate") && !$("recordDate").value) $("recordDate").value = today();
 }
-
-window.addEventListener("DOMContentLoaded", () => {
-  if ($("recordDate")) $("recordDate").value = today();
-});
