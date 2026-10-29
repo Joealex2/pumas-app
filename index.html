@@ -9,8 +9,6 @@
   <link rel="manifest" href="./manifest.json">
 </head>
 <body>
-  <!-- Se eliminó por completo la pantalla de login para acceso directo -->
-
   <div id="appShell" class="app-shell">
     <aside class="sidebar">
       <div class="side-brand">
@@ -107,9 +105,10 @@
         </div>
       </section>
 
+      <!-- VISTA DE REGISTRAR MOVIMIENTO (PAGO / RECIBO DIRECTO) -->
       <section id="view-payment" class="view hidden">
         <div class="panel narrow-panel">
-          <div class="section-head"><div><h3>Registrar movimiento (Deuda / Abono)</h3><p class="muted">Busca un alumno para ver sus deudas pendientes o crear una nueva.</p></div></div>
+          <div class="section-head"><div><h3>Emitir Recibo y Cobro</h3><p class="muted">Selecciona el alumno y define el concepto a cobrar directamente.</p></div></div>
           
           <div class="span-two" style="margin-bottom: 20px;">
             <label for="payStudentSearch">Buscar alumno *</label>
@@ -123,23 +122,14 @@
             <input type="hidden" id="payStudentId" required>
           </div>
 
-          <div id="pendingObligationsWrap" class="hidden" style="margin-bottom: 25px;">
-              <label>Obligaciones pendientes</label>
-              <div id="pendingObligationsList" class="pending-debts"></div>
-          </div>
-
           <form id="paymentForm" class="form-grid">
-            <div class="span-two" style="border-top: 1px solid var(--line); padding-top: 15px;">
-                <h4 id="formModeLabel" style="margin:0 0 10px; color:var(--red);">Crear nueva obligación y abonar</h4>
-            </div>
-            <input type="hidden" id="payObligationId">
-            <div><label for="payConcept">Concepto *</label><select id="payConcept" required><option value="Mensualidad">Mensualidad</option><option value="Mensualidad + Matrícula">Mensualidad + Matrícula</option><option value="Implementos deportivos">Implementos deportivos</option><option value="Uniformes">Uniformes</option><option value="Otros">Otros</option></select></div>
-            <div id="monthlyTypeWrap"><label for="monthlyType">Tarifa de mensualidad</label><select id="monthlyType"><option value="normal">Normal (hasta el 15)</option><option value="late">Con atraso (desde el 16)</option></select></div>
-            <div><label for="recordDate">Fecha de registro *</label><input id="recordDate" type="date" required></div>
-            <div><label for="payAmount">Importe total de la obligación (Deuda) *</label><input id="payAmount" type="number" min="0" step="0.01" required></div>
-            <div><label for="payAbono">Monto del abono (Lo que paga hoy) *</label><input id="payAbono" type="number" min="0" step="0.01" required></div>
-            <div class="span-two"><label for="payNotes">Detalle (opcional)</label><input id="payNotes"></div>
-            <div class="span-two summary-box"><div><span>Saldo pendiente al guardar</span><strong id="payBalance">$0.00</strong></div></div>
+            <div><label for="payConcept">Concepto del recibo *</label><select id="payConcept" required><option value="Mensualidad">Mensualidad</option><option value="Mensualidad + Matrícula">Mensualidad + Matrícula</option><option value="Implementos deportivos">Implementos deportivos</option><option value="Uniformes">Uniformes</option><option value="Otros">Otros</option></select></div>
+            <div id="monthlyTypeWrap"><label for="monthlyType">Tipo de mensualidad</label><select id="monthlyType"><option value="normal">Normal (hasta el 15)</option><option value="late">Con atraso (desde el 16)</option></select></div>
+            <div><label for="recordDate">Fecha de recibo *</label><input id="recordDate" type="date" required></div>
+            <div><label for="payAmount">Valor total a cobrar ($) *</label><input id="payAmount" type="number" min="0" step="0.01" required></div>
+            <div><label for="payAbono">Monto que paga hoy ($) *</label><input id="payAbono" type="number" min="0" step="0.01" required></div>
+            <div class="span-two"><label for="payNotes">Detalle o notas (opcional)</label><input id="payNotes" placeholder="Ej. Mes de Octubre"></div>
+            <div class="span-two summary-box"><div><span>Saldo pendiente resultante</span><strong id="payBalance">$0.00</strong></div></div>
             <div class="form-actions span-two"><button class="primary" type="submit">Registrar y generar recibo</button><button class="secondary" type="reset">Limpiar formulario</button></div>
           </form>
         </div>
@@ -150,11 +140,10 @@
         <div class="panel">
           <div class="section-head"><div><h3>Historial de recibos y pagos</h3><p class="muted">Filtra por concepto, estado, busca un alumno o deja el mes vacío para ver todos sus comprobantes históricos.</p></div></div>
           <div class="filter-grid">
-            <div><label>Mes (Opcional - Vacío para ver todos)</label><input id="historyMonth" type="month"></div>
+            <div><label>Mes (Opcional - Vacío para ver todo)</label><input id="historyMonth" type="month"></div>
             <div><label>Concepto</label><select id="historyConcept"><option value="all">Todos</option><option>Mensualidad</option><option>Mensualidad + Matrícula</option><option>Implementos deportivos</option><option>Uniformes</option><option>Otros</option></select></div>
             <div><label>Estado deuda</label><select id="historyStatus"><option value="all">Todos</option><option value="paid">Pagados (Saldo $0)</option><option value="partial">Con abonos parciales</option><option value="pending">Deudas pendientes</option></select></div>
             
-            <!-- Buscador por escritura para filtrar historial por estudiante -->
             <div>
               <label>Filtrar por Alumno</label>
               <div class="search-dropdown-wrap">
