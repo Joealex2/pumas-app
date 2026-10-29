@@ -9,26 +9,9 @@
   <link rel="manifest" href="./manifest.json">
 </head>
 <body>
-  <div id="loginScreen" class="login-wrap">
-    <div class="login-card">
-      <img src="./img/Pum.png" alt="Logo Los Pumas" class="logo-img">
-      <p class="eyebrow">CLUB DEPORTIVO FORMATIVO ESPECIALIZADO</p>
-      <h1>LOS PUMAS</h1>
-      <p class="muted">Sistema de gestión de alumnos y pagos</p>
-      
-      <div id="loginNotice" class="notice error hidden" style="margin-top: 15px;"></div>
+  <!-- Se eliminó por completo la pantalla de login para acceso directo -->
 
-      <form id="loginForm">
-        <label for="loginUser">Usuario o correo</label>
-        <input id="loginUser" autocomplete="username" required placeholder="Ingresa tu usuario">
-        <label for="loginPass">Contraseña</label>
-        <input id="loginPass" type="password" autocomplete="current-password" required placeholder="Ingresa tu contraseña">
-        <button class="primary full" type="submit" id="loginSubmitBtn">Ingresar</button>
-      </form>
-    </div>
-  </div>
-
-  <div id="appShell" class="app-shell hidden">
+  <div id="appShell" class="app-shell">
     <aside class="sidebar">
       <div class="side-brand">
         <img src="./img/Pum.png" alt="Logo" class="logo-img-small">
@@ -40,11 +23,7 @@
         <button data-view="payment" class="nav-item">＋ <span>Registrar movimiento</span></button>
         <button data-view="history" class="nav-item">▤ <span>Historiales</span></button>
         <button data-view="tariffs" class="nav-item">⚙ <span>Tarifas</span></button>
-        <button id="logoutBtnNav" class="nav-item nav-logout mobile-only">🚪 <span>Cerrar sesión</span></button>
       </nav>
-      <div class="side-bottom desktop-only">
-        <button id="logoutBtn" class="logout">Cerrar sesión ↗</button>
-      </div>
     </aside>
 
     <main class="main">
@@ -169,9 +148,9 @@
 
       <section id="view-history" class="view hidden">
         <div class="panel">
-          <div class="section-head"><div><h3>Historial de recibos y pagos</h3><p class="muted">Filtra por mes, concepto, estado o busca un alumno específico escribiendo su nombre.</p></div></div>
+          <div class="section-head"><div><h3>Historial de recibos y pagos</h3><p class="muted">Filtra por concepto, estado, busca un alumno o deja el mes vacío para ver todos sus comprobantes históricos.</p></div></div>
           <div class="filter-grid">
-            <div><label>Mes</label><input id="historyMonth" type="month"></div>
+            <div><label>Mes (Opcional - Vacío para ver todos)</label><input id="historyMonth" type="month"></div>
             <div><label>Concepto</label><select id="historyConcept"><option value="all">Todos</option><option>Mensualidad</option><option>Mensualidad + Matrícula</option><option>Implementos deportivos</option><option>Uniformes</option><option>Otros</option></select></div>
             <div><label>Estado deuda</label><select id="historyStatus"><option value="all">Todos</option><option value="paid">Pagados (Saldo $0)</option><option value="partial">Con abonos parciales</option><option value="pending">Deudas pendientes</option></select></div>
             
@@ -204,28 +183,6 @@
             <div><label for="tariffUniform">Uniformes ($)</label><input id="tariffUniform" type="number" min="0" step="0.01" required></div>
             <div><label for="tariffOther">Otros ($)</label><input id="tariffOther" type="number" min="0" step="0.01" required></div>
             <div class="form-actions span-two"><button class="primary" type="submit">Guardar tarifas</button><button class="secondary" type="button" id="resetTariffs">Restablecer valores</button></div>
-          </form>
-        </div>
-
-        <div class="panel">
-          <div class="section-head">
-            <div>
-              <h3>Seguridad de acceso</h3>
-              <p class="muted">Cambia las credenciales de ingreso al sistema.</p>
-            </div>
-          </div>
-          <form id="authConfigForm" class="form-grid">
-            <div>
-              <label for="cfgUser">Nuevo usuario *</label>
-              <input id="cfgUser" required placeholder="Ej. maestro_galo">
-            </div>
-            <div>
-              <label for="cfgPass">Nueva contraseña *</label>
-              <input id="cfgPass" type="password" required placeholder="Mínimo 4 caracteres">
-            </div>
-            <div class="form-actions span-two">
-              <button class="primary" type="submit">Actualizar credenciales</button>
-            </div>
           </form>
         </div>
 
