@@ -41,7 +41,7 @@
             <div class="welcome-content">
                 <p class="eyebrow light">CLUB ESPECIALIZADO FORMATIVO LOS PUMAS</p>
                 <h1>¡Bienvenido al sistema!</h1>
-                <p>Administra alumnos, controla deudas y genera recibos al instante.</p>
+                <p>Administra alumnos, controla deudas y genera recibos al instante en la nube.</p>
             </div>
             <div class="welcome-symbol">🥋</div>
         </div>
@@ -105,7 +105,6 @@
         </div>
       </section>
 
-      <!-- VISTA DE REGISTRAR MOVIMIENTO (PAGO / RECIBO DIRECTO) -->
       <section id="view-payment" class="view hidden">
         <div class="panel narrow-panel">
           <div class="section-head"><div><h3>Emitir Recibo y Cobro</h3><p class="muted">Selecciona el alumno y define el concepto a cobrar directamente.</p></div></div>
@@ -193,6 +192,10 @@
       </section>
     </main>
   </div>
+
+  <!-- SDKs de Firebase (Firestore y Core) -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="./app.js"></script>
