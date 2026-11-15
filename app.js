@@ -807,24 +807,129 @@ function downloadBlob(blob, fileName) {
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 
+// Devuelve una imagen "dibujable" (Image) a partir del sello cargado
+async function resolveLogoImage() {
+  let logo = null;
+  try { logo = await loadLogoImage(); } catch (e) { console.warn(e); }
+  if (!logo) return null;
+  if (typeof logo === "string") {
+    return await new Promise(res => {
+      const im = new Image();
+      im.onload = () => res(im);
+      im.onerror = () => res(null);
+      im.src = logo;
+    });
+  }
+  return logo; // ya es un <img>
+}
+
+// Dibuja el recibo directamente en un canvas (100% fiable en celulares,
+// sin depender de html2canvas). Replica el diseño del PDF (A5, 148x210 mm).
+function drawReceiptCanvas(p, logoImg) {
+  const scale = 6; // píxeles por milímetro
+  const W = Math.round(148 * scale), H = Math.round(210 * scale);
+  const canvas = document.createElement("canvas");
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext("2d");
+  const X = (mm) => mm * scale;
+  const Y = (mm) => mm * scale;
+  const fs = (pt) => pt * 0.3528 * scale;
+  const SANS = "Arial, Helvetica, sans-serif";
+
+  ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, W, H);
+  ctx.textBaseline = "alphabetic";
+  ctx.textAlign = "left";
+
+  // Franja superior oscura
+  ctx.fillStyle = "#211e1e"; ctx.fillRect(0, 0, X(148), Y(44));
+  if (logoImg) { try { ctx.drawImage(logoImg, X(12), Y(6), X(28), Y(28)); } catch (e) { console.warn(e); } }
+
+  ctx.fillStyle = "#ffffff";
+  ctx.font = `bold ${fs(14)}px ${SANS}`;
+  ctx.fillText("Club Deportivo Formativo Especializado", X(46), Y(16));
+  ctx.fillText("Los Pumas", X(46), Y(23));
+  ctx.font = `${fs(9)}px ${SANS}`;
+  ctx.fillText("SANTA ISABEL, CALLE QUEVEDO Y PICHINCHA", X(46), Y(31));
+  ctx.fillText("CEL: 0984302599", X(46), Y(36));
+
+  // Título
+  ctx.fillStyle = "#000000";
+  ctx.font = `bold ${fs(22)}px ${SANS}`;
+  ctx.fillText("RECIBO", X(15), Y(58));
+
+  // Datos
+  ctx.font = `${fs(12)}px ${SANS}`;
+  ctx.strokeStyle = "rgb(120,120,120)"; ctx.lineWidth = Math.max(1, scale * 0.18);
+  [["Recibo N° :", String(p.receipt), 75], ["Recibo a: :", String(p.studentName), 83], ["Fecha :", String(p.recordDate), 91]]
+    .forEach(([label, val, y]) => {
+      ctx.fillStyle = "#000000";
+      ctx.fillText(label, X(15), Y(y));
+      ctx.fillText(val, X(42), Y(y));
+      ctx.beginPath(); ctx.moveTo(X(40), Y(y + 1)); ctx.lineTo(X(133), Y(y + 1)); ctx.stroke();
+    });
+
+  // Descripción
+  ctx.fillStyle = "#26292b"; ctx.fillRect(X(15), Y(105), X(30), Y(8));
+  ctx.fillStyle = "#ffffff"; ctx.font = `bold ${fs(11)}px ${SANS}`;
+  ctx.fillText("Descripción:", X(18), Y(110.5));
+  ctx.fillStyle = "#000000"; ctx.font = `${fs(12)}px ${SANS}`;
+  ctx.fillText(`${p.concept} - Deuda total: ${money(p.total)}`, X(15), Y(122));
+  if (p.notes) {
+    ctx.fillStyle = "rgb(80,80,80)"; ctx.font = `${fs(9)}px ${SANS}`;
+    ctx.fillText("(Nota: " + p.notes + ")", X(15), Y(128));
+  }
+  ctx.strokeStyle = "rgb(120,120,120)";
+  ctx.beginPath(); ctx.moveTo(X(15), Y(132)); ctx.lineTo(X(133), Y(132)); ctx.stroke();
+
+  // Saldo
+  ctx.fillStyle = "#b5b5b5"; ctx.fillRect(X(15), Y(145), X(22), Y(8));
+  ctx.fillStyle = "#000000"; ctx.font = `bold ${fs(11)}px ${SANS}`;
+  ctx.fillText("SALDO:", X(17), Y(150.5));
+  ctx.fillStyle = "rgb(199,25,45)"; ctx.fillText(money(p.balance), X(40), Y(150.5));
+  ctx.strokeStyle = "rgb(120,120,120)";
+  ctx.beginPath(); ctx.moveTo(X(39), Y(152)); ctx.lineTo(X(65), Y(152)); ctx.stroke();
+
+  // Pago total
+  ctx.fillStyle = "#b5b5b5"; ctx.fillRect(X(70), Y(155), X(26), Y(8));
+  ctx.fillStyle = "#000000"; ctx.font = `bold ${fs(11)}px ${SANS}`;
+  ctx.fillText("Pago Total:", X(72), Y(160.5));
+  ctx.fillText(money(p.amount), X(98), Y(160.5));
+  ctx.strokeStyle = "rgb(120,120,120)";
+  ctx.beginPath(); ctx.moveTo(X(98), Y(162)); ctx.lineTo(X(125), Y(162)); ctx.stroke();
+
+  // Firma
+  ctx.textAlign = "center"; ctx.fillStyle = "#000000";
+  ctx.font = `italic ${fs(22)}px Georgia, "Times New Roman", serif`;
+  ctx.fillText("G Gavilanez", X(105), Y(182));
+  ctx.strokeStyle = "#000000"; ctx.lineWidth = Math.max(1, scale * 0.18);
+  ctx.beginPath(); ctx.moveTo(X(80), Y(185)); ctx.lineTo(X(130), Y(185)); ctx.stroke();
+  ctx.font = `bold ${fs(10)}px ${SANS}`;
+  ctx.fillText("Lic. Galo Gavilanez", X(105), Y(190));
+  ctx.fillText("Director y Maestro", X(105), Y(195));
+  ctx.textAlign = "left";
+
+  // Franja inferior
+  ctx.fillStyle = "#26292b"; ctx.fillRect(0, Y(202), X(148), Y(8));
+  return canvas;
+}
+
 // Comparte el recibo como IMAGEN (PNG) junto al mensaje. A diferencia del PDF,
 // WhatsApp sí incluye el texto como pie de foto en las imágenes.
 async function shareReceiptImage(p) {
-  const el = $("receiptPaper");
-  if (!el) { notice("Primero genera un recibo.", true); return; }
-  if (typeof html2canvas !== "function") { notice("No se pudo cargar el generador de imagen.", true); return; }
-
   notice("Generando imagen del recibo...");
-  let canvas;
+
+  let logo = null;
+  try { logo = await resolveLogoImage(); } catch (e) { console.warn(e); }
+
+  let blob;
   try {
-    canvas = await html2canvas(el, { scale: 2, backgroundColor: "#ffffff", useCORS: true, logging: false });
+    const canvas = drawReceiptCanvas(p, logo);
+    blob = await new Promise(res => canvas.toBlob(res, "image/png"));
   } catch (e) {
-    console.error("Error html2canvas:", e);
-    notice("No se pudo generar la imagen.", true);
+    console.error("Error al generar la imagen:", e);
+    notice("No se pudo generar la imagen: " + (e && e.message ? e.message : "error desconocido"), true);
     return;
   }
-
-  const blob = await new Promise(res => canvas.toBlob(res, "image/png"));
   if (!blob) { notice("No se pudo generar la imagen.", true); return; }
 
   const fileName = `Recibo_${p.receipt}.png`;
