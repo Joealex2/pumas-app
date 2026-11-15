@@ -1,18 +1,7 @@
-const CACHE_NAME = 'pumas-cache-v104';
-const ASSETS = [
-  './',
-  './index.html',
-  './styles.css',
-  './app.js',
-  './manifest.json',
-  './img/Pum.png'
-];
+const CACHE_NAME = 'pumas-auto-update-v1';
 
 self.addEventListener('install', event => {
   self.skipWaiting();
-  event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => cache.addAll(ASSETS))
-  );
 });
 
 self.addEventListener('activate', event => {
@@ -23,16 +12,18 @@ self.addEventListener('activate', event => {
   );
 });
 
+// Estrategia Network First: Siempre busca la última versión en internet y actualiza al instante
 self.addEventListener('fetch', event => {
   event.respondWith(
     fetch(event.request)
-      .then(response => {
-        if (response && response.status === 200 && response.type === 'basic') {
-          const resClone = response.clone();
-          caches.open(CACHE_NAME).then(cache => cache.put(event.request, resClone));
-        }
-        return response;
+      .then(networkResponse => {
+        return caches.open(CACHE_NAME).then(cache => {
+          cache.put(event.request, networkResponse.clone());
+          return networkResponse;
+        });
       })
-      .catch(() => caches.match(event.request))
+      .catch(() => {
+        return caches.match(event.request);
+      })
   );
 });
