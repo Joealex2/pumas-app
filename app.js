@@ -375,7 +375,7 @@ function getReceiptMessage(p) {
   return `*CLUB LOS PUMAS* 🐆\n_Comprobante de Movimiento_\n\n*Recibo:* ${p.receipt}\n*Alumno:* ${p.studentName}\n*Concepto:* ${p.concept}\n*Fecha:* ${p.recordDate}\n\n*Total a pagar:* ${money(p.total)}\n*Abono:* 💵 ${money(p.amount)}\n*Saldo pendiente:* 🔴 ${money(p.balance)}${p.notes ? `\n*Nota:* ${p.notes}` : ''}`;
 }
 
-// --- RECIBO Y PDF (Solo 2 botones limpios) ---
+// --- RECIBO Y PDF (Solo 2 botones: Descargar y el botón rojo de Compartir PDF) ---
 function renderReceipt(p) {
   const box = $("receiptResult");
   if (!box) return;
@@ -436,7 +436,7 @@ function renderReceipt(p) {
     
     <div class="receipt-actions" style="margin-top: 20px;">
         <button class="secondary" id="downloadReceipt">📥 Descargar PDF</button>
-        <button class="primary btn-whatsapp-green" id="shareReceiptPdf" style="background-color: #10b981;">💬 Compartir PDF WhatsApp</button>
+        <button class="primary" id="shareReceiptPdf">📄 Compartir PDF</button>
     </div>`;
 
   $("downloadReceipt")?.addEventListener("click", () => downloadPdf(p));
@@ -526,47 +526,47 @@ function downloadPdf(p) {
 }
 
 async function shareReceiptPdf(p) {
-  const introText = `📄 *Recibo para:* ${p.studentName}\n\n`;
-  const textMsg = introText + getReceiptMessage(p);
+  if (!window.jspdf) { notice("Requiere internet para el PDF.", true); return; }
 
-  // Copia automática del texto detallado con el nombre del deportista al portapapeles
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    try {
-      await navigator.clipboard.writeText(textMsg.replace(/\\n/g, '\n'));
-      notice("📋 ¡Texto copiado! Pégalo en el chat junto al PDF.");
-    } catch (e) {}
-  }
+  const doc = buildPdfDoc(p);
+  const logo = new Image();
+  logo.src = './img/Pum.png';
 
-  if (navigator.share && window.jspdf) {
+  logo.onload = async function () {
     try {
-      const doc = buildPdfDoc(p);
-      const logo = new Image();
-      logo.src = './img/Pum.png';
-      
-      await new Promise((resolve) => {
-        logo.onload = () => { doc.addImage(logo, 'PNG', 12, 6, 28, 28); resolve(); };
-        logo.onerror = () => resolve();
+      doc.addImage(logo, 'PNG', 12, 6, 28, 28);
+      await triggerNativeShare(doc, p);
+    } catch (e) {
+      await triggerNativeShare(doc, p);
+    }
+  };
+
+  logo.onerror = async function () {
+    await triggerNativeShare(doc, p);
+  };
+}
+
+async function triggerNativeShare(doc, p) {
+  try {
+    const pdfBlob = doc.output('blob');
+    const file = new File([pdfBlob], `Recibo_${p.receipt}.pdf`, { type: 'application/pdf' });
+
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({
+        files: [file],
+        title: `Recibo ${p.receipt} - Club Los Pumas`
       });
-
-      const pdfBlob = doc.output('blob');
-      const file = new File([pdfBlob], `Recibo_${p.receipt}.pdf`, { type: 'application/pdf' });
-
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({
-          files: [file],
-          title: `Recibo ${p.receipt} - Club Los Pumas`,
-          text: textMsg
-        });
-        return;
-      }
-    } catch (err) {
+      return;
+    }
+  } catch (err) {
+    if (err.name !== 'AbortError') {
       console.log("Web Share nativo falló:", err);
     }
   }
 
-  downloadPdf(p);
-  const waUrl = `https://wa.me/?text=${encodeURIComponent(textMsg.replace(/\\n/g, '\n'))}`;
-  window.open(waUrl, "_blank", "noopener");
+  // Fallback: Descarga directa si el dispositivo no soporta compartir archivos nativamente
+  doc.save(`Recibo_${p.receipt}.pdf`);
+  notice("📥 PDF descargado para compartir.");
 }
 
 // --- HISTORIAL CON BUSCADOR DE ALUMNO Y CONTEO TOTAL ---
