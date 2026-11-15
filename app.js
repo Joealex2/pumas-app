@@ -552,7 +552,7 @@ async function executeNativeShare(doc, p) {
     const pdfBlob = doc.output('blob');
     const file = new File([pdfBlob], `Recibo_${p.receipt}.pdf`, { type: 'application/pdf' });
 
-    // Forzamos la apertura directa del menú de compartir archivos de Android/iOS/PC
+    // Forzamos la apertura directa del menú nativo del celular sin bloqueos previos de compatibilidad
     if (navigator.share) {
       await navigator.share({
         files: [file],
@@ -561,16 +561,15 @@ async function executeNativeShare(doc, p) {
       return;
     }
   } catch (err) {
-    if (err.name !== 'AbortError') {
-      console.log("Error al compartir nativamente:", err);
-    } else {
-      return; // El usuario canceló el menú, no hacemos nada
+    if (err.name === 'AbortError') {
+      return; // Si cancelas el menú a propósito, no hace nada
     }
+    console.log("Error al invocar el compartidor nativo:", err);
   }
 
-  // Fallback si el dispositivo no soporta compartir archivos directamente
+  // Si el navegador del celular no soporta esta función por completo, realiza la descarga como respaldo
   doc.save(`Recibo_${p.receipt}.pdf`);
-  notice("📥 PDF descargado para compartir.");
+  notice("📥 PDF descargado en tu dispositivo.");
 }
 
 // --- HISTORIAL CON BUSCADOR DE ALUMNO Y CONTEO TOTAL ---

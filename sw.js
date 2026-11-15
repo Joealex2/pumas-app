@@ -12,7 +12,7 @@ self.addEventListener('activate', event => {
   );
 });
 
-// Estrategia Network First: Siempre busca la última versión en internet y actualiza al instante
+// Estrategia Network First: Busca siempre la última versión en internet y actualiza la app de inmediato
 self.addEventListener('fetch', event => {
   event.respondWith(
     fetch(event.request)
