@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pumas-cache-v21';
+const CACHE_NAME = 'pumas-cache-v19';
 const ASSETS = [
   './',
   './index.html',
@@ -23,7 +23,6 @@ self.addEventListener('activate', event => {
   );
 });
 
-// Network First para desarrollo ágil y fallback a caché para PWA offline
 self.addEventListener('fetch', event => {
   event.respondWith(
     fetch(event.request)
