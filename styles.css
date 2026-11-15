@@ -525,6 +525,65 @@ h2 {
   cursor: default;
 }
 
+/* ---------- MESES POR CANCELAR (deuda) ---------- */
+.debt-summary {
+  font-size: 13px;
+  margin: 6px 0 10px;
+  color: var(--dark);
+}
+
+.months-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 8px;
+}
+
+.month-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.month-item:hover {
+  border-color: #fca5a5;
+}
+
+.month-item.late {
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
+.month-item input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--red);
+  cursor: pointer;
+}
+
+.month-item .month-name {
+  flex: 1;
+  text-transform: capitalize;
+}
+
+.month-item .month-amt {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--dark);
+  white-space: nowrap;
+}
+
+.month-item.late .month-amt {
+  color: var(--red);
+}
+
 /* ---------- ACTIVITY / DEBTORS ---------- */
 .activity-item,
 .debtor-item {

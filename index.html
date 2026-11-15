@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Club Los Pumas | Gestión de pagos</title>
-  <link rel="stylesheet" href="./styles.css?v=6">
+  <link rel="stylesheet" href="./styles.css?v=13">
   <link rel="manifest" href="./manifest.json">
   <meta name="theme-color" content="#211e1e">
 </head>
@@ -205,22 +205,14 @@
                   <option value="Otro">Otro</option>
                 </select>
               </div>
-              <div class="form-group" id="monthlyTypeWrap">
-                <label>Tipo de mensualidad</label>
-                <select id="monthlyType" class="hidden">
-                  <option value="normal">Normal (hasta el 15)</option>
-                  <option value="late">Atrasado (desde el 16)</option>
-                </select>
-                <label class="switch-row" id="lateFeeRow">
-                  <input type="checkbox" id="lateFeeToggle">
-                  <span id="lateFeeLabel">Sin recargo por atraso (hasta el 15)</span>
-                </label>
-                <span class="subline" id="lateFeeHint"></span>
-              </div>
               <div class="form-group">
                 <label>Fecha de recibo *</label>
                 <input type="date" id="recordDate" required>
               </div>
+              <label class="switch-row hidden" id="lateFeeRow" style="grid-column:1/-1; margin:0;">
+                <input type="checkbox" id="lateFeeToggle">
+                <span id="lateFeeLabel">Aplicar recargo por atraso</span>
+              </label>
               <div class="form-group">
                 <label>Valor total a cobrar ($) *</label>
                 <input type="number" step="0.01" id="payAmount" required>
@@ -229,6 +221,12 @@
                 <label>Monto que paga hoy ($) *</label>
                 <input type="number" step="0.01" id="payAbono" required>
               </div>
+            </div>
+
+            <div class="form-group hidden" id="pendingMonthsWrap" style="margin-top:15px;">
+              <label>Meses por cancelar</label>
+              <div id="debtSummary" class="debt-summary"></div>
+              <div id="pendingMonthsList" class="months-list"></div>
             </div>
 
             <div class="form-group" style="margin-top:15px;">
@@ -366,7 +364,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="./app.js?v=6"></script>
+  <script src="./app.js?v=13"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {

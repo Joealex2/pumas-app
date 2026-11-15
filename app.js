@@ -38,6 +38,10 @@ async function loadData() {
       if (!data.obligations) data.obligations = [];
       if (!data.abonos) data.abonos = [];
       if (!data.tariffs) data.tariffs = { ...defaultTariffs };
+      // Migración: los alumnos sin "mes de inicio" arrancan limpios desde el mes actual
+      let migrated = false;
+      (data.students || []).forEach(s => { if (!s.since) { s.since = currentMonthKey(); migrated = true; } });
+      if (migrated) { try { await docRef.set(data); } catch (e) { console.warn("No se pudo guardar la migración:", e); } }
     } else {
       await db.collection("pumas_db").doc("configuracion_general").set(data);
     }
@@ -77,13 +81,81 @@ function monthLabel(monthKey) {
   return name.charAt(0).toUpperCase() + name.slice(1) + " " + y;
 }
 
-// ¿El alumno registró su mensualidad en el mes indicado?
+// ¿El alumno ya cubrió (totalmente) la mensualidad del mes indicado?
 function hasPaidMonthly(studentId, monthKey) {
-  return (data.abonos || []).some(a =>
-    a.studentId === studentId &&
-    String(a.recordDate || "").startsWith(monthKey) &&
-    /mensualidad/i.test(a.concept || "")
-  );
+  return monthPaidFor(studentId, monthKey) >= (Number(data.tariffs.normal) || 0);
+}
+
+// --- MENSUALIDADES / DEUDA ---
+function currentMonthKey() { return today().slice(0, 7); }
+
+function isMensualidad(a) { return /mensualidad/i.test(a.concept || ""); }
+
+// Mes que cubre un abono de mensualidad (campo nuevo o compatibilidad con la fecha)
+function abonoCoveredMonth(a) {
+  if (a && a.coveredMonth) return a.coveredMonth;
+  return String((a && a.recordDate) || "").slice(0, 7);
+}
+
+function monthAdd(key, n) {
+  const [y, m] = String(key).split("-").map(Number);
+  const d = new Date(y, m - 1 + n, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+// Lista de meses "YYYY-MM" desde `fromKey` hasta `toKey` inclusive
+function monthsRange(fromKey, toKey) {
+  const out = [];
+  let cur = fromKey, guard = 0;
+  while (cur <= toKey && guard < 600) { out.push(cur); cur = monthAdd(cur, 1); guard++; }
+  return out;
+}
+
+// ¿El mes está vencido? (meses pasados = sí; mes actual = después del día 15)
+function monthIsLate(key) {
+  const cm = currentMonthKey();
+  if (key < cm) return true;
+  if (key === cm) return isPastDue(today());
+  return false;
+}
+
+function monthAmount(key) {
+  return Number(monthIsLate(key) ? data.tariffs.late : data.tariffs.normal) || 0;
+}
+
+// Total abonado por el alumno a un mes concreto (permite pagos parciales)
+function monthPaidFor(studentId, monthKey) {
+  return (data.abonos || [])
+    .filter(a => a.studentId === studentId && isMensualidad(a) && abonoCoveredMonth(a) === monthKey)
+    .reduce((s, a) => s + (Number(a.amount) || 0), 0);
+}
+
+// Meses que el alumno aún debe (saldo restante por mes)
+function pendingMonthsFor(student) {
+  if (!student) return [];
+  const since = student.since || currentMonthKey();
+  const cm = currentMonthKey();
+  const base = Number(data.tariffs.normal) || 0;
+  const out = [];
+  monthsRange(since, cm).forEach(k => {
+    const paid = monthPaidFor(student.id, k);
+    if (paid >= base) return; // mes saldado
+    const target = monthAmount(k); // incluye recargo si está vencido
+    const amount = Math.max(0, target - paid);
+    if (amount > 0) out.push({ month: k, label: monthLabel(k), amount, paid, late: monthIsLate(k) });
+  });
+  return out;
+}
+
+// Deuda total del alumno = mensualidades pendientes + saldos de obligaciones NO mensuales
+function studentDebt(student) {
+  const months = pendingMonthsFor(student);
+  const monthlyTotal = months.reduce((s, m) => s + m.amount, 0);
+  // Las obligaciones de "Mensualidad" ya se contabilizan por mes; no deben sumarse otra vez.
+  const otherBalance = (data.obligations || [])
+    .filter(o => o.studentId === student.id && !/mensualidad/i.test(o.concept || ""))
+    .reduce((s, o) => s + (Number(o.balance) || 0), 0);
+  return { months, monthlyTotal, otherBalance, total: monthlyTotal + otherBalance, count: months.length };
 }
 
 function notice(msg, error = false) {
@@ -202,7 +274,8 @@ $("studentForm")?.addEventListener("submit", e => {
       names: $("studentNames")?.value.trim(),
       last: $("studentLast")?.value.trim(),
       group: $("studentGroup")?.value,
-      status: $("studentStatus")?.value
+      status: $("studentStatus")?.value,
+      since: currentMonthKey()
     };
     data.students.push(s);
     saveData();
@@ -274,15 +347,18 @@ function renderStudents() {
 
   if (!arr.length) { $("studentsList").innerHTML = '<div class="empty-state" style="padding:20px;text-align:center;color:var(--muted);">No hay alumnos registrados.</div>'; return; }
 
-  $("studentsList").innerHTML = `<table style="min-width: 650px;"><thead><tr><th>Alumno</th><th>Cédula / ID</th><th>Grupo</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>${arr.map(s => {
+  $("studentsList").innerHTML = `<table style="min-width: 720px;"><thead><tr><th>Alumno</th><th>Cédula / ID</th><th>Grupo</th><th>Estado</th><th>Deuda</th><th>Acciones</th></tr></thead><tbody>${arr.map(s => {
     const status = s.status || "Activo";
     const statusBadge = status === "Activo" ? `<span class="badge" style="background:#e6f7ed;color:#177344">Activo</span>` : `<span class="badge" style="background:#fde7e9;color:#a41327">Inactivo</span>`;
     const cobrarBtn = status === "Activo" ? `<button class="mini-btn red" style="padding:6px 12px; font-weight:600;" data-pay-for="${s.id}">Cobrar</button> ` : "";
+    const debt = studentDebt(s).total;
+    const debtCell = debt > 0 ? `<span style="color:var(--red); font-weight:700;">${money(debt)}</span>` : `<span class="muted">—</span>`;
     return `<tr>
         <td><b>${esc(s.names)} ${esc(s.last)}</b></td>
         <td>${esc(s.cedula)}<span class="subline">${esc(s.id)}</span></td>
         <td>${esc(s.group)}</td>
         <td>${statusBadge}</td>
+        <td>${debtCell}</td>
         <td>
             <div style="display:flex; gap:6px; flex-wrap:nowrap;">
                 ${cobrarBtn}<button class="mini-btn" style="padding:6px 12px;" onclick="editStudent('${s.id}')">Editar</button>
@@ -374,7 +450,11 @@ $("payStudentSearch")?.addEventListener("input", (e) => {
   if (q.length < 2) { res?.classList.add("hidden"); return; }
   const arr = data.students.filter(s => (s.status || "Activo") !== "Inactivo" && [s.cedula, s.names, s.last].join(" ").toLowerCase().includes(q));
   if (res) {
-    res.innerHTML = arr.length ? arr.map(s => `<div class="search-item" data-id="${s.id}"><b>${esc(s.names)} ${esc(s.last)}</b> - ${esc(s.cedula)}</div>`).join("") : '<div class="search-item muted">Sin resultados.</div>';
+    res.innerHTML = arr.length ? arr.map(s => {
+      const debt = studentDebt(s).total;
+      const debtTag = debt > 0 ? ` <span style="color:var(--red); font-weight:700;">· debe ${money(debt)}</span>` : ` <span style="color:#177344; font-weight:600;">· al día</span>`;
+      return `<div class="search-item" data-id="${s.id}"><b>${esc(s.names)} ${esc(s.last)}</b> - ${esc(s.cedula)}${debtTag}</div>`;
+    }).join("") : '<div class="search-item muted">Sin resultados.</div>';
     res.querySelectorAll(".search-item[data-id]").forEach(el => el.addEventListener("click", () => selectStudentForPayment(el.dataset.id)));
     res.classList.remove("hidden");
   }
@@ -412,48 +492,123 @@ function tariffFor(concept, type) {
 
 function recomputeAmount() {
   const concept = $("payConcept")?.value;
-  const suggested = Number(tariffFor(concept, $("monthlyType")?.value)).toFixed(2);
+  const suggested = Number(tariffFor(concept, "normal")).toFixed(2);
   if ($("payAmount")) $("payAmount").value = suggested;
   if ($("payAbono")) $("payAbono").value = suggested;
   updateBalance();
 }
 
-// Mensualidad: sin recargo hasta el día 15; después se ofrece aplicar el recargo
-function syncLateFee() {
-  const isMonthly = $("payConcept")?.value === "Mensualidad";
-  $("monthlyTypeWrap")?.classList.toggle("hidden", !isMonthly);
-  if (!isMonthly) { if ($("monthlyType")) $("monthlyType").value = "normal"; return; }
+// Mensualidades: se cobra por mes; el recargo se aplica automáticamente a cada mes vencido
+function selectedStudent() {
+  const id = $("payStudentId")?.value;
+  return id ? data.students.find(s => s.id === id) : null;
+}
 
-  const past = isPastDue($("recordDate")?.value);
-  const diff = Number(data.tariffs.late) - Number(data.tariffs.normal);
-  const toggle = $("lateFeeToggle");
-  const label = $("lateFeeLabel");
-  const hint = $("lateFeeHint");
+function renderPendingMonths() {
+  const wrap = $("pendingMonthsWrap");
+  const list = $("pendingMonthsList");
+  const info = $("debtSummary");
+  if (!wrap || !list) return;
+  const s = selectedStudent();
+  const isMonthly = /mensualidad/i.test($("payConcept")?.value || "");
 
-  if (!past) {
-    if (toggle) { toggle.checked = false; toggle.disabled = true; }
-    if ($("monthlyType")) $("monthlyType").value = "normal";
-    if (label) label.textContent = "Sin recargo por atraso (hasta el 15)";
-    if (hint) hint.textContent = "La mensualidad no tiene recargo si se paga hasta el día 15.";
-  } else {
-    if (toggle) { toggle.disabled = false; toggle.checked = true; }
-    if ($("monthlyType")) $("monthlyType").value = "late";
-    if (label) label.textContent = `Aplicar recargo por atraso (+${money(diff)})`;
-    if (hint) hint.textContent = "Después del día 15 puedes aplicar o no el recargo.";
+  if (!s) {
+    wrap.classList.add("hidden"); list.innerHTML = ""; if (info) info.innerHTML = "";
+    $("lateFeeRow")?.classList.add("hidden");
+    if ($("payAmount")) $("payAmount").readOnly = false;
+    if ($("payAbono")) $("payAbono").readOnly = false;
+    return;
   }
+  wrap.classList.remove("hidden");
+
+  const debt = studentDebt(s);
+  if (info) {
+    info.innerHTML = debt.total > 0
+      ? `Deuda estimada: <b style="color:var(--red)">${money(debt.total)}</b> · ${debt.count} mes(es) pendiente(s)`
+      : `<span class="muted">Sin deuda pendiente 🎉</span>`;
+  }
+
+  // Recargo: se puede aplicar o quitar cuando ya pasó el día 15 (según la fecha del recibo)
+  const refDate = $("recordDate")?.value || today();
+  const refMonth = String(refDate).slice(0, 7);
+  const lateRow = $("lateFeeRow");
+  const refMonthPendingLate = isMonthly && isPastDue(refDate) && debt.months.some(m => m.month === refMonth);
+  if (lateRow) {
+    const wasHidden = lateRow.classList.contains("hidden");
+    lateRow.classList.toggle("hidden", !refMonthPendingLate);
+    if (refMonthPendingLate && wasHidden && $("lateFeeToggle")) $("lateFeeToggle").checked = true;
+    const diff = (Number(data.tariffs.late) || 0) - (Number(data.tariffs.normal) || 0);
+    if ($("lateFeeLabel")) $("lateFeeLabel").textContent = `Aplicar recargo por atraso (+${money(diff)})`;
+  }
+
+  if (!debt.months.length) {
+    list.innerHTML = `<div class="muted" style="font-size:13px;">No hay mensualidades pendientes.</div>`;
+  } else {
+    const cm = currentMonthKey();
+    list.innerHTML = debt.months.map(m => {
+      const ch = monthChargeForForm(m.month);
+      return `
+      <label class="month-item${ch.late ? " late" : ""}">
+        <input type="checkbox" class="month-check" value="${m.month}" data-amount="${ch.amount}" ${m.month === cm ? "checked" : ""}>
+        <span class="month-name">${esc(m.label)}</span>
+        <span class="month-amt">${money(ch.amount)}${ch.late ? " · recargo" : ""}</span>
+      </label>`;
+    }).join("");
+    list.querySelectorAll(".month-check").forEach(cb => cb.addEventListener("change", recomputeMonthlyAmount));
+  }
+
+  // "Valor total" es calculado (solo lectura); "Monto que paga hoy" es editable para pagos parciales
+  if ($("payAmount")) $("payAmount").readOnly = isMonthly;
+  if ($("payAbono")) $("payAbono").readOnly = false;
+}
+
+// Saldo pendiente de un mes en el formulario: permite quitar el recargo del mes del recibo
+function monthChargeForForm(monthKey) {
+  const refDate = $("recordDate")?.value || today();
+  const refMonth = String(refDate).slice(0, 7);
+  const waive = $("lateFeeToggle") && !$("lateFeeToggle").checked;
+  const s = selectedStudent();
+  const paid = s ? monthPaidFor(s.id, monthKey) : 0;
+  const base = Number(data.tariffs.normal) || 0;
+  if (paid >= base) return { amount: 0, late: false };
+  let late;
+  if (monthKey < refMonth) late = true;
+  else if (monthKey === refMonth) late = isPastDue(refDate) && !waive;
+  else late = false;
+  const target = Number(late ? data.tariffs.late : data.tariffs.normal) || 0;
+  return { amount: Math.max(0, target - paid), late };
+}
+
+function recomputeMonthlyAmount() {
+  const concept = $("payConcept")?.value || "";
+  const checks = [...document.querySelectorAll("#pendingMonthsList .month-check:checked")];
+  let total = checks.reduce((s, c) => s + (Number(c.dataset.amount) || 0), 0);
+  if (/matr[ií]cula/i.test(concept)) total += Number(data.tariffs.matricula) || 0;
+  if ($("payAmount")) $("payAmount").value = total.toFixed(2);
+  if ($("payAbono")) $("payAbono").value = total.toFixed(2);
+  updateBalance();
 }
 
 function updateSuggestedAmount() {
-  syncLateFee();
-  recomputeAmount();
+  const isMonthly = /mensualidad/i.test($("payConcept")?.value || "");
+  renderPendingMonths();
+  if (isMonthly) recomputeMonthlyAmount(); else recomputeAmount();
 }
 
 $("payConcept")?.addEventListener("change", updateSuggestedAmount);
 $("recordDate")?.addEventListener("change", updateSuggestedAmount);
-$("monthlyType")?.addEventListener("change", updateSuggestedAmount);
 $("lateFeeToggle")?.addEventListener("change", () => {
-  if ($("monthlyType")) $("monthlyType").value = $("lateFeeToggle").checked ? "late" : "normal";
-  recomputeAmount();
+  document.querySelectorAll("#pendingMonthsList .month-check").forEach(cb => {
+    const ch = monthChargeForForm(cb.value);
+    cb.dataset.amount = ch.amount;
+    const item = cb.closest(".month-item");
+    if (item) {
+      item.classList.toggle("late", ch.late);
+      const amtEl = item.querySelector(".month-amt");
+      if (amtEl) amtEl.textContent = money(ch.amount) + (ch.late ? " · recargo" : "");
+    }
+  });
+  recomputeMonthlyAmount();
 });
 $("payAbono")?.addEventListener("input", updateBalance);
 $("payAmount")?.addEventListener("input", updateBalance);
@@ -474,28 +629,69 @@ $("paymentForm")?.addEventListener("reset", () => setTimeout(() => {
   resetPaymentFormToNew();
 }, 0));
 
-$("paymentForm")?.addEventListener("submit", e => {
+$("paymentForm")?.addEventListener("submit", async e => {
   e.preventDefault();
   const studentId = $("payStudentId")?.value;
   if (!studentId) { notice("Selecciona un alumno.", true); return; }
-  const total = Number($("payAmount")?.value), abono = Number($("payAbono")?.value);
-  if (!Number.isFinite(total) || total < 0 || !Number.isFinite(abono) || abono < 0) { notice("Valores inválidos.", true); return; }
-
   const s = data.students.find(x => x.id === studentId);
-  const balance = Math.max(0, total - abono);
+  if (!s) { notice("Alumno no encontrado.", true); return; }
 
-  const obId = `OB-${String(data.nextObligation++).padStart(5, "0")}`;
-  data.obligations.push({ id: obId, studentId: s.id, concept: $("payConcept")?.value, monthlyType: $("monthlyType")?.value, total: total, balance: balance, created: $("recordDate")?.value });
-
+  const concept = $("payConcept")?.value || "";
   const cleanDate = ($("recordDate")?.value || today()).trim();
-  const p = { receipt: `LP-${String(data.nextReceipt++).padStart(6, "0")}`, obligationId: obId, studentId: s.id, studentName: `${s.names} ${s.last}`, cedula: s.cedula, concept: $("payConcept")?.value, recordDate: cleanDate, amount: abono, notes: $("payNotes")?.value.trim() };
-  data.abonos.push(p);
-  
-  saveData();
+  const notes = $("payNotes")?.value.trim() || "";
+  const isMonthly = /mensualidad/i.test(concept);
+  const created = [];
+
+  if (isMonthly) {
+    const checks = [...document.querySelectorAll("#pendingMonthsList .month-check:checked")]
+      .map(c => ({ month: c.value, amount: Number(c.dataset.amount) || 0 }))
+      .sort((a, b) => a.month.localeCompare(b.month));
+
+    if (!checks.length) { notice("Selecciona al menos un mes a cancelar.", true); return; }
+
+    const matricula = /matr[ií]cula/i.test(concept) ? (Number(data.tariffs.matricula) || 0) : 0;
+    const grandTotal = checks.reduce((s, c) => s + c.amount, 0) + matricula;
+    let remaining = Number($("payAbono")?.value);
+    if (!Number.isFinite(remaining) || remaining < 0) { notice("Monto inválido.", true); return; }
+    remaining = Math.min(remaining, grandTotal);
+
+    // Reparte el pago entre los meses (del más antiguo al más reciente): permite pagos parciales
+    checks.forEach(sel => {
+      if (remaining <= 0) return;
+      const pay = Math.min(remaining, sel.amount);
+      remaining -= pay;
+      const obId = `OB-${String(data.nextObligation++).padStart(5, "0")}`;
+      data.obligations.push({ id: obId, studentId: s.id, concept, monthlyType: monthIsLate(sel.month) ? "late" : "normal", total: sel.amount, balance: sel.amount - pay, created: cleanDate, coveredMonth: sel.month });
+      const p = { receipt: `LP-${String(data.nextReceipt++).padStart(6, "0")}`, obligationId: obId, studentId: s.id, studentName: `${s.names} ${s.last}`, cedula: s.cedula, concept, coveredMonth: sel.month, recordDate: cleanDate, amount: pay, notes };
+      data.abonos.push(p); created.push(p);
+    });
+
+    if (matricula > 0 && remaining > 0) {
+      const pay = Math.min(remaining, matricula);
+      remaining -= pay;
+      const obId = `OB-${String(data.nextObligation++).padStart(5, "0")}`;
+      data.obligations.push({ id: obId, studentId: s.id, concept: "Matrícula", monthlyType: "normal", total: matricula, balance: matricula - pay, created: cleanDate });
+      const p = { receipt: `LP-${String(data.nextReceipt++).padStart(6, "0")}`, obligationId: obId, studentId: s.id, studentName: `${s.names} ${s.last}`, cedula: s.cedula, concept: "Matrícula", recordDate: cleanDate, amount: pay, notes };
+      data.abonos.push(p); created.push(p);
+    }
+
+    if (!created.length) { notice("El monto a pagar debe ser mayor a 0.", true); return; }
+  } else {
+    const total = Number($("payAmount")?.value), abono = Number($("payAbono")?.value);
+    if (!Number.isFinite(total) || total < 0 || !Number.isFinite(abono) || abono < 0) { notice("Valores inválidos.", true); return; }
+    const obId = `OB-${String(data.nextObligation++).padStart(5, "0")}`;
+    data.obligations.push({ id: obId, studentId: s.id, concept, monthlyType: "normal", total, balance: Math.max(0, total - abono), created: cleanDate });
+    const p = { receipt: `LP-${String(data.nextReceipt++).padStart(6, "0")}`, obligationId: obId, studentId: s.id, studentName: `${s.names} ${s.last}`, cedula: s.cedula, concept, recordDate: cleanDate, amount: abono, notes };
+    data.abonos.push(p); created.push(p);
+  }
+
+  await saveData();
   e.target.reset();
   $("payStudentClear")?.click();
-  renderReceipt(getJoinedReceipt(p));
-  notice("Recibo registrado correctamente en la nube.");
+  renderReceipt(getJoinedReceipt(created[0]));
+  notice(created.length === 1
+    ? "Recibo registrado correctamente en la nube."
+    : `${created.length} recibos registrados (${created[0].receipt} a ${created[created.length - 1].receipt}).`);
 });
 
 function getJoinedReceipt(abono) {
@@ -505,7 +701,7 @@ function getJoinedReceipt(abono) {
 
 // Generar mensaje detallado para WhatsApp
 function getReceiptMessage(p) {
-  return `*CLUB LOS PUMAS* 🐆\n_Comprobante de Movimiento_\n\n*Recibo:* ${p.receipt}\n*Alumno:* ${p.studentName}\n*Concepto:* ${p.concept}\n*Fecha:* ${p.recordDate}\n\n*Total a pagar:* ${money(p.total)}\n*Abono:* 💵 ${money(p.amount)}\n*Saldo pendiente:* 🔴 ${money(p.balance)}${p.notes ? `\n*Nota:* ${p.notes}` : ''}`;
+  return `*CLUB LOS PUMAS* 🐆\n_Comprobante de Movimiento_\n\n*Recibo:* ${p.receipt}\n*Alumno:* ${p.studentName}\n*Concepto:* ${p.concept}${p.coveredMonth ? `\n*Cubre:* ${monthLabel(p.coveredMonth)}` : ""}\n*Fecha:* ${p.recordDate}\n\n*Total a pagar:* ${money(p.total)}\n*Abono:* 💵 ${money(p.amount)}\n*Saldo pendiente:* 🔴 ${money(p.balance)}${p.notes ? `\n*Nota:* ${p.notes}` : ''}`;
 }
 
 // --- RECIBO Y PDF ---
@@ -550,6 +746,10 @@ function renderReceipt(p) {
                     <b style="flex: 0 0 85px; text-align: right;">Fecha :</b>
                     <span style="flex: 1; border-bottom: 1px solid #777; padding-bottom: 2px;">${esc(p.recordDate)}</span>
                 </div>
+                ${p.coveredMonth ? `<div style="display: flex; gap: 12px; margin-top: 12px;">
+                    <b style="flex: 0 0 85px; text-align: right;">Cubre :</b>
+                    <span style="flex: 1; border-bottom: 1px solid #777; padding-bottom: 2px; text-transform: capitalize;">${esc(monthLabel(p.coveredMonth))}</span>
+                </div>` : ""}
             </div>
             
             <div style="margin-bottom: 40px;">
@@ -582,17 +782,13 @@ function renderReceipt(p) {
     </div>
     
     <div class="receipt-actions" style="margin-top: 20px;">
-        <button class="secondary" id="downloadReceipt">📥 Descargar PDF</button>
-        <button class="primary" id="shareReceiptPdf">📄 Compartir PDF</button>
-        <button class="primary" id="shareReceiptImage">🖼️ Compartir imagen + mensaje</button>
-        <button class="secondary" id="shareReceiptWhatsApp">📱 Enviar texto por WhatsApp</button>
-        <button class="danger" id="deleteReceiptFromResult">🗑️ Eliminar recibo</button>
+        <button class="primary" id="shareReceiptImage">🖼️ Compartir comprobante</button>
+        <button class="secondary" id="downloadReceiptPdf">📄 Descargar PDF</button>
+        <button class="danger" id="deleteReceiptFromResult">🗑️ Eliminar comprobante</button>
     </div>`;
 
-  $("downloadReceipt")?.addEventListener("click", () => downloadPdf(p));
-  $("shareReceiptPdf")?.addEventListener("click", () => shareReceiptPdf(p));
   $("shareReceiptImage")?.addEventListener("click", () => shareReceiptImage(p));
-  $("shareReceiptWhatsApp")?.addEventListener("click", () => shareReceiptWhatsAppText(p));
+  $("downloadReceiptPdf")?.addEventListener("click", () => downloadPdf(p));
   $("deleteReceiptFromResult")?.addEventListener("click", async () => {
     await deleteReceipt(p.receipt);
     if (!data.abonos.some(a => a.receipt === p.receipt)) {
@@ -860,7 +1056,9 @@ function drawReceiptCanvas(p, logoImg) {
   // Datos
   ctx.font = `${fs(12)}px ${SANS}`;
   ctx.strokeStyle = "rgb(120,120,120)"; ctx.lineWidth = Math.max(1, scale * 0.18);
-  [["Recibo N° :", String(p.receipt), 75], ["Recibo a: :", String(p.studentName), 83], ["Fecha :", String(p.recordDate), 91]]
+  const dataRows = [["Recibo N° :", String(p.receipt), 75], ["Recibo a: :", String(p.studentName), 83], ["Fecha :", String(p.recordDate), 91]];
+  if (p.coveredMonth) dataRows.push(["Cubre :", monthLabel(p.coveredMonth), 99]);
+  dataRows
     .forEach(([label, val, y]) => {
       ctx.fillStyle = "#000000";
       ctx.fillText(label, X(15), Y(y));
@@ -1044,7 +1242,7 @@ function renderHistory() {
     <td>${money(p.balance)}</td>
     <td>
       <div style="display:flex; gap:6px;">
-        <button class="mini-btn red" data-receipt="${p.receipt}">Ver PDF</button>
+        <button class="mini-btn red" data-receipt="${p.receipt}">Ver comprobante</button>
         <button class="mini-btn danger" onclick="deleteReceipt('${p.receipt}')">Eliminar</button>
       </div>
     </td>
@@ -1160,10 +1358,10 @@ function renderDashboard() {
   const debtors = active.filter(s => !hasPaidMonthly(s.id, monthKey));
   const late = isPastDue(today());
   const rate = Number(late ? data.tariffs.late : data.tariffs.normal) || 0;
-  const monthPending = debtors.length * rate;
+  const totalDebt = active.reduce((sum, s) => sum + studentDebt(s).total, 0);
 
-  if ($("statPendingLabel")) $("statPendingLabel").textContent = `Mensualidad ${monthLabel(monthKey)} por cobrar`;
-  if ($("statPending")) $("statPending").textContent = money(monthPending);
+  if ($("statPendingLabel")) $("statPendingLabel").textContent = "Deuda total por cobrar";
+  if ($("statPending")) $("statPending").textContent = money(totalDebt);
 
   // Actividad reciente: últimos 5 recibos
   const recent = [...(data.abonos || [])]
@@ -1204,16 +1402,20 @@ function renderDashboard() {
 
   const monthList = $("dashMonthlyList");
   if (monthList) {
-    monthList.innerHTML = debtors.length ? debtors.map(s => `<div class="debtor-item">
+    monthList.innerHTML = debtors.length ? debtors.map(s => {
+      const d = studentDebt(s);
+      const monthsTxt = d.count === 1 ? "1 mes" : `${d.count} meses`;
+      return `<div class="debtor-item">
         <div>
           <b>${esc(s.names)} ${esc(s.last)}</b>
-          <span class="subline">${esc(s.cedula)} · ${esc(s.group || "")}</span>
+          <span class="subline">${esc(s.cedula)} · ${esc(s.group || "")} · debe ${monthsTxt}</span>
         </div>
         <div class="debtor-right">
-          <span class="amt-red">${money(rate)}</span>
+          <span class="amt-red">${money(d.total)}</span>
           <button class="mini-btn red" data-pay-for="${s.id}">Cobrar</button>
         </div>
-      </div>`).join("") : '<div class="empty-state">¡Todos al día este mes! 🎉</div>';
+      </div>`;
+    }).join("") : '<div class="empty-state">¡Todos al día este mes! 🎉</div>';
     monthList.querySelectorAll("[data-pay-for]").forEach(b => b.addEventListener("click", () => { showView("payment"); selectStudentForPayment(b.dataset.payFor); }));
   }
 }
