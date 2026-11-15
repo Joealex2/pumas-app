@@ -520,7 +520,7 @@ function generatePdfDocument(p) {
   return doc;
 }
 
-// Manejador fluido para descargar o compartir por WhatsApp con copiado automático de texto
+// Manejador multiplataforma optimizado para celulares y computadoras (envío físico de PDF o fallback)
 async function handlePdfAction(p, actionType) {
   if (!window.jspdf) { notice("Requiere internet para el PDF.", true); return; }
 
@@ -535,6 +535,27 @@ async function handlePdfAction(p, actionType) {
 
     if (actionType === 'share') {
       const textMsg = getReceiptMessage(p);
+      const pdfBlob = doc.output('blob');
+      const file = new File([pdfBlob], `Recibo_${p.receipt}.pdf`, { type: 'application/pdf' });
+
+      // Verificamos si el dispositivo soporta compartir archivos nativamente (Celulares y tablets)
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.share({
+            files: [file],
+            title: `Recibo ${p.receipt} - Club Los Pumas`,
+            text: `Estimado/a ${p.studentName}, adjunto el comprobante de su pago en Club Los Pumas.`
+          });
+          return;
+        } catch (shareErr) {
+          if (shareErr.name !== 'AbortError') {
+            console.log("El usuario canceló o falló el share nativo:", shareErr);
+          }
+          return;
+        }
+      }
+
+      // Alternativa automática para computadoras o navegadores de escritorio
       if (navigator.clipboard && navigator.clipboard.writeText) {
         try {
           await navigator.clipboard.writeText(textMsg.replace(/\\n/g, '\n'));
@@ -546,7 +567,7 @@ async function handlePdfAction(p, actionType) {
       setTimeout(() => {
         const waUrl = `https://wa.me/?text=${encodeURIComponent(textMsg.replace(/\\n/g, '\n'))}`;
         window.open(waUrl, "_blank", "noopener");
-        notice("📋 Resumen copiado y PDF descargado. ¡Adjúntalo en WhatsApp!");
+        notice("📥 PDF descargado y mensaje copiado. ¡Adjúntalo en WhatsApp!");
       }, 300);
     }
   } catch (err) {
