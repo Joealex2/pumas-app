@@ -537,10 +537,19 @@ function renderReceipt(p) {
         <div style="padding: 25px;">
             <h1 style="margin: 0 0 25px 0; font-size: 26px; font-weight: 900; letter-spacing: 0.5px; color: #000;">RECIBO</h1>
             
-            <div style="display: grid; grid-template-columns: 85px 1fr; gap: 12px; font-size: 14px; margin-bottom: 25px; color: #000;">
-                <b style="text-align: right;">Recibo N° :</b> <span style="border-bottom: 1px solid #777; padding-bottom: 2px;">${esc(p.receipt)}</span>
-                <b style="text-align: right;">Recibo a: :</b> <span style="border-bottom: 1px solid #777; padding-bottom: 2px;">${esc(p.studentName)}</span>
-                <b style="text-align: right;">Fecha :</b> <span style="border-bottom: 1px solid #777; padding-bottom: 2px;">${esc(p.recordDate)}</span>
+            <div style="font-size: 14px; margin-bottom: 25px; color: #000;">
+                <div style="display: flex; gap: 12px; margin-bottom: 12px;">
+                    <b style="flex: 0 0 85px; text-align: right;">Recibo N° :</b>
+                    <span style="flex: 1; border-bottom: 1px solid #777; padding-bottom: 2px;">${esc(p.receipt)}</span>
+                </div>
+                <div style="display: flex; gap: 12px; margin-bottom: 12px;">
+                    <b style="flex: 0 0 85px; text-align: right;">Recibo a: :</b>
+                    <span style="flex: 1; border-bottom: 1px solid #777; padding-bottom: 2px;">${esc(p.studentName)}</span>
+                </div>
+                <div style="display: flex; gap: 12px;">
+                    <b style="flex: 0 0 85px; text-align: right;">Fecha :</b>
+                    <span style="flex: 1; border-bottom: 1px solid #777; padding-bottom: 2px;">${esc(p.recordDate)}</span>
+                </div>
             </div>
             
             <div style="margin-bottom: 40px;">
@@ -575,12 +584,14 @@ function renderReceipt(p) {
     <div class="receipt-actions" style="margin-top: 20px;">
         <button class="secondary" id="downloadReceipt">📥 Descargar PDF</button>
         <button class="primary" id="shareReceiptPdf">📄 Compartir PDF</button>
+        <button class="primary" id="shareReceiptImage">🖼️ Compartir imagen + mensaje</button>
         <button class="secondary" id="shareReceiptWhatsApp">📱 Enviar texto por WhatsApp</button>
         <button class="danger" id="deleteReceiptFromResult">🗑️ Eliminar recibo</button>
     </div>`;
 
   $("downloadReceipt")?.addEventListener("click", () => downloadPdf(p));
   $("shareReceiptPdf")?.addEventListener("click", () => shareReceiptPdf(p));
+  $("shareReceiptImage")?.addEventListener("click", () => shareReceiptImage(p));
   $("shareReceiptWhatsApp")?.addEventListener("click", () => shareReceiptWhatsAppText(p));
   $("deleteReceiptFromResult")?.addEventListener("click", async () => {
     await deleteReceipt(p.receipt);
@@ -783,6 +794,67 @@ async function executeNativeShare(doc, p) {
 function shareReceiptWhatsAppText(p) {
   const url = "https://wa.me/?text=" + encodeURIComponent(getReceiptMessage(p));
   window.open(url, "_blank");
+}
+
+function downloadBlob(blob, fileName) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+// Comparte el recibo como IMAGEN (PNG) junto al mensaje. A diferencia del PDF,
+// WhatsApp sí incluye el texto como pie de foto en las imágenes.
+async function shareReceiptImage(p) {
+  const el = $("receiptPaper");
+  if (!el) { notice("Primero genera un recibo.", true); return; }
+  if (typeof html2canvas !== "function") { notice("No se pudo cargar el generador de imagen.", true); return; }
+
+  notice("Generando imagen del recibo...");
+  let canvas;
+  try {
+    canvas = await html2canvas(el, { scale: 2, backgroundColor: "#ffffff", useCORS: true, logging: false });
+  } catch (e) {
+    console.error("Error html2canvas:", e);
+    notice("No se pudo generar la imagen.", true);
+    return;
+  }
+
+  const blob = await new Promise(res => canvas.toBlob(res, "image/png"));
+  if (!blob) { notice("No se pudo generar la imagen.", true); return; }
+
+  const fileName = `Recibo_${p.receipt}.png`;
+  const title = `Recibo ${p.receipt} - Club Los Pumas`;
+  const message = getReceiptMessage(p);
+
+  let file;
+  try {
+    file = new File([blob], fileName, { type: "image/png" });
+  } catch (e) {
+    downloadBlob(blob, fileName);
+    notice("📥 Imagen descargada en tu dispositivo.");
+    return;
+  }
+
+  const withMessage = { files: [file], text: message, title };
+  const fileOnly = { files: [file], title };
+
+  if (navigator.share && navigator.canShare) {
+    try {
+      if (navigator.canShare(withMessage)) { await navigator.share(withMessage); return; }
+      if (navigator.canShare(fileOnly)) { await navigator.share(fileOnly); return; }
+    } catch (err) {
+      if (err.name === "AbortError") return;
+      console.log("Error al compartir la imagen:", err);
+    }
+  }
+
+  downloadBlob(blob, fileName);
+  notice("📥 Imagen descargada en tu dispositivo.");
 }
 
 // --- HISTORIAL CON BUSCADOR DE ALUMNO Y CONTEO TOTAL ---
