@@ -4,59 +4,116 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Club Los Pumas | Gestión de pagos</title>
-  <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="./styles.css?v=4">
   <link rel="manifest" href="./manifest.json">
   <meta name="theme-color" content="#211e1e">
 </head>
 <body>
   <div class="app-shell">
-    <header class="app-header">
-      <div class="brand">
-        <img src="./img/Pum.png" alt="Logo">
-        <div>
-          <h1>LOS PUMAS</h1>
-          <p>Gestión de pagos</p>
-        </div>
-      </div>
-    </header>
+    <div class="app-top">
+      <header class="app-header">
+        <button type="button" class="brand" data-go="dashboard" title="Ir al inicio" aria-label="Ir al inicio">
+          <img src="./img/Pum.png?v=2" alt="Sello Club Los Pumas">
+          <span class="brand-text">
+            <span class="brand-name">LOS PUMAS</span>
+            <span class="brand-sub">Gestión de pagos</span>
+          </span>
+        </button>
+      </header>
 
-    <nav class="app-nav">
-      <button class="nav-item active" data-view="dashboard">Inicio</button>
-      <button class="nav-item" data-view="students">Alumnos</button>
-      <button class="nav-item" data-view="payment">Registrar movimiento</button>
-      <button class="nav-item" data-view="history">Historiales</button>
-      <button class="nav-item" data-view="tariffs">Tarifas</button>
-    </nav>
+      <nav class="app-nav">
+        <button class="nav-item active" data-view="dashboard"><span class="nav-ico">🏠</span>Inicio</button>
+        <button class="nav-item" data-view="students"><span class="nav-ico">👥</span>Alumnos</button>
+        <button class="nav-item" data-view="payment"><span class="nav-ico">💵</span>Registrar pago</button>
+        <button class="nav-item" data-view="history"><span class="nav-ico">🧾</span>Historiales</button>
+        <button class="nav-item" data-view="tariffs"><span class="nav-ico">⚙️</span>Tarifas</button>
+      </nav>
+    </div>
 
     <main class="app-content">
       <div id="notice" class="notice hidden"></div>
 
       <!-- DASHBOARD VIEW -->
       <section id="view-dashboard" class="view">
-        <h2>Inicio</h2>
+        <div class="dash-hero">
+          <div class="dash-hero-text">
+            <span class="dash-tag">Panel de control</span>
+            <h2>Bienvenido a Club Los Pumas</h2>
+            <p>Gestiona alumnos, cobros y recibos desde un solo lugar.</p>
+          </div>
+          <img src="./img/Pum.png?v=2" alt="Sello Club Los Pumas" class="dash-hero-logo">
+        </div>
+
         <div class="stats-grid">
           <div class="stat-card">
+            <div class="stat-icon">👥</div>
             <h3>Alumnos Activos</h3>
             <p id="statStudents">0</p>
           </div>
           <div class="stat-card">
+            <div class="stat-icon">🧾</div>
             <h3>Pagos Registrados</h3>
             <p id="statPayments">0</p>
           </div>
           <div class="stat-card">
+            <div class="stat-icon">💵</div>
             <h3>Recaudación Total</h3>
             <p id="statRevenue">$0.00</p>
           </div>
+          <div class="stat-card accent-red">
+            <div class="stat-icon">🗓️</div>
+            <h3 id="statPendingLabel">Mensualidad por cobrar</h3>
+            <p id="statPending">$0.00</p>
+          </div>
         </div>
-        <div class="quick-actions" style="margin-top:20px;">
-          <button class="primary" data-go="payment">➕ Registrar Nuevo Pago</button>
-          <button class="secondary" data-go="students">👥 Ver Alumnos</button>
+
+        <h3 class="section-title">Accesos rápidos</h3>
+        <div class="quick-grid">
+          <button class="quick-card" data-go="payment">
+            <span class="quick-ico">➕</span>
+            <b>Registrar pago</b>
+            <small>Emitir recibo y cobro</small>
+          </button>
+          <button class="quick-card" data-go="students">
+            <span class="quick-ico">👥</span>
+            <b>Alumnos</b>
+            <small>Altas, edición y CSV</small>
+          </button>
+          <button class="quick-card" data-go="history">
+            <span class="quick-ico">🧾</span>
+            <b>Historiales</b>
+            <small>Recibos y saldos</small>
+          </button>
+          <button class="quick-card" data-go="tariffs">
+            <span class="quick-ico">⚙️</span>
+            <b>Tarifas</b>
+            <small>Precios oficiales</small>
+          </button>
+        </div>
+
+        <div class="dash-two-col">
+          <div class="card">
+            <div class="section-head">
+              <h3 id="dashMonthlyTitle">Mensualidades del mes</h3>
+              <span class="badge" id="dashMonthlyBadge" style="background:var(--red-soft);color:var(--red);">0/0</span>
+            </div>
+            <div class="progress-track"><div class="progress-fill" id="dashMonthlyProgress" style="width:0%"></div></div>
+            <p class="subline" id="dashMonthlyHint" style="margin:8px 0 6px;"></p>
+            <div id="dashMonthlyList" class="debtor-list"></div>
+          </div>
+          <div class="card">
+            <div class="section-head">
+              <h3>Actividad reciente</h3>
+              <button class="link-btn" data-go="history">Ver todo →</button>
+            </div>
+            <div id="dashRecent" class="activity-list"></div>
+          </div>
         </div>
       </section>
 
       <!-- STUDENTS VIEW -->
       <section id="view-students" class="view hidden">
-        <h2>Gestión de Alumnos</h2>
+        <h2><span class="h2-ico">👥</span>Gestión de Alumnos</h2>
         <div class="card" style="margin-bottom:20px;">
           <h3 id="studentFormTitle">Registro de alumnos</h3>
           <form id="studentForm">
@@ -123,7 +180,7 @@
 
       <!-- PAYMENT VIEW -->
       <section id="view-payment" class="view hidden">
-        <h2>Emitir Recibo y Cobro</h2>
+        <h2><span class="h2-ico">💵</span>Emitir Recibo y Cobro</h2>
         <div class="card">
           <form id="paymentForm">
             <div class="form-group" style="position:relative; margin-bottom:15px;">
@@ -150,10 +207,15 @@
               </div>
               <div class="form-group" id="monthlyTypeWrap">
                 <label>Tipo de mensualidad</label>
-                <select id="monthlyType">
+                <select id="monthlyType" class="hidden">
                   <option value="normal">Normal (hasta el 15)</option>
                   <option value="late">Atrasado (desde el 16)</option>
                 </select>
+                <label class="switch-row" id="lateFeeRow">
+                  <input type="checkbox" id="lateFeeToggle">
+                  <span id="lateFeeLabel">Sin recargo por atraso (hasta el 15)</span>
+                </label>
+                <span class="subline" id="lateFeeHint"></span>
               </div>
               <div class="form-group">
                 <label>Fecha de recibo *</label>
@@ -179,9 +241,9 @@
               <strong id="payBalance" style="color:var(--red); font-size:18px;">$0.00</strong>
             </div>
 
-            <div style="display:flex; gap:10px;">
+            <div style="display:flex; gap:10px; flex-wrap:wrap;">
               <button type="submit" class="primary">Registrar y generar recibo</button>
-              <button type="reset" class="secondary">Limpiar formulario</button>
+              <button type="reset" class="secondary" id="payResetBtn">🧹 Limpiar / Nuevo</button>
             </div>
           </form>
         </div>
@@ -192,7 +254,7 @@
 
       <!-- HISTORY VIEW -->
       <section id="view-history" class="view hidden">
-        <h2>Historial de Recibos y Pagos</h2>
+        <h2><span class="h2-ico">🧾</span>Historial de Recibos y Pagos</h2>
         <div class="card" style="margin-bottom:20px;">
           <div class="form-group" style="position:relative; margin-bottom:15px;">
             <label>Filtrar por alumno específico</label>
@@ -255,7 +317,7 @@
 
       <!-- TARIFFS VIEW -->
       <section id="view-tariffs" class="view hidden">
-        <h2>Configuración de Tarifas y Respaldo</h2>
+        <h2><span class="h2-ico">⚙️</span>Configuración de Tarifas y Respaldo</h2>
         <div class="form-grid">
           <div class="card">
             <h3>Tarifas Oficiales ($)</h3>
@@ -288,10 +350,23 @@
     </main>
   </div>
 
+  <!-- MODAL DE CONFIRMACIÓN -->
+  <div id="confirmModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+    <div class="modal-box">
+      <div class="modal-icon" id="confirmIcon">⚠️</div>
+      <h3 id="confirmTitle">Confirmar</h3>
+      <p id="confirmMessage"></p>
+      <div class="modal-actions">
+        <button type="button" class="secondary" id="confirmCancel">Cancelar</button>
+        <button type="button" class="danger" id="confirmOk">Sí, eliminar</button>
+      </div>
+    </div>
+  </div>
+
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="./app.js"></script>
+  <script src="./app.js?v=4"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {

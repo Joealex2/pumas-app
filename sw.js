@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pumas-auto-update-v1';
+const CACHE_NAME = 'pumas-auto-update-v4';
 
 self.addEventListener('install', event => {
   self.skipWaiting();
@@ -12,18 +12,20 @@ self.addEventListener('activate', event => {
   );
 });
 
-// Estrategia Network First: Busca siempre la última versión en internet y actualiza la app de inmediato
+// Estrategia Network First: busca siempre la última versión en internet y
+// revalida con el servidor para no servir archivos viejos desde la caché.
 self.addEventListener('fetch', event => {
+  if (event.request.method !== 'GET') return;
+
   event.respondWith(
-    fetch(event.request)
+    fetch(event.request, { cache: 'no-cache' })
       .then(networkResponse => {
-        return caches.open(CACHE_NAME).then(cache => {
-          cache.put(event.request, networkResponse.clone());
-          return networkResponse;
-        });
+        const copy = networkResponse.clone();
+        caches.open(CACHE_NAME)
+          .then(cache => cache.put(event.request, copy))
+          .catch(() => {});
+        return networkResponse;
       })
-      .catch(() => {
-        return caches.match(event.request);
-      })
+      .catch(() => caches.match(event.request))
   );
 });

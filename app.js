@@ -63,6 +63,29 @@ function money(n) { return new Intl.NumberFormat("en-US", { style: "currency", c
 function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
 function today() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }
 
+// La mensualidad no tiene recargo si se paga hasta el día 15
+function isPastDue(dateStr) {
+  const d = dateStr || today();
+  const day = Number(String(d).slice(8, 10));
+  return day > 15;
+}
+
+// Nombre del mes a partir de una clave "YYYY-MM"
+function monthLabel(monthKey) {
+  const [y, m] = String(monthKey).split("-").map(Number);
+  const name = new Date(y, m - 1, 1).toLocaleDateString("es-EC", { month: "long" });
+  return name.charAt(0).toUpperCase() + name.slice(1) + " " + y;
+}
+
+// ¿El alumno registró su mensualidad en el mes indicado?
+function hasPaidMonthly(studentId, monthKey) {
+  return (data.abonos || []).some(a =>
+    a.studentId === studentId &&
+    String(a.recordDate || "").startsWith(monthKey) &&
+    /mensualidad/i.test(a.concept || "")
+  );
+}
+
 function notice(msg, error = false) {
   const n = $("notice");
   if (!n) return;
@@ -71,6 +94,41 @@ function notice(msg, error = false) {
   if (error) n.classList.add("error");
   window.scrollTo({ top: 0, behavior: "smooth" });
   setTimeout(() => n.classList.add("hidden"), 4000);
+}
+
+// Ventana de advertencia reutilizable. Devuelve una promesa con true/false.
+function confirmDialog({ title = "Confirmar", message = "", confirmText = "Aceptar", danger = true, icon = "⚠️" } = {}) {
+  return new Promise(resolve => {
+    const modal = $("confirmModal");
+    if (!modal) { resolve(window.confirm(message)); return; }
+
+    const ok = $("confirmOk");
+    const cancel = $("confirmCancel");
+    if ($("confirmTitle")) $("confirmTitle").textContent = title;
+    if ($("confirmMessage")) $("confirmMessage").textContent = message;
+    if ($("confirmIcon")) $("confirmIcon").textContent = icon;
+    if (ok) { ok.textContent = confirmText; ok.className = danger ? "danger" : "primary"; }
+    modal.classList.remove("hidden");
+    setTimeout(() => cancel && cancel.focus(), 0);
+
+    const cleanup = (val) => {
+      modal.classList.add("hidden");
+      ok?.removeEventListener("click", onOk);
+      cancel?.removeEventListener("click", onCancel);
+      modal.removeEventListener("click", onOverlay);
+      document.removeEventListener("keydown", onKey);
+      resolve(val);
+    };
+    const onOk = () => cleanup(true);
+    const onCancel = () => cleanup(false);
+    const onOverlay = (e) => { if (e.target === modal) cleanup(false); };
+    const onKey = (e) => { if (e.key === "Escape") cleanup(false); };
+
+    ok?.addEventListener("click", onOk);
+    cancel?.addEventListener("click", onCancel);
+    modal.addEventListener("click", onOverlay);
+    document.addEventListener("keydown", onKey);
+  });
 }
 
 function showView(name) {
@@ -90,6 +148,11 @@ window.addEventListener("DOMContentLoaded", async () => {
   await loadData();
   showView("dashboard");
   if ($("recordDate")) $("recordDate").value = today();
+});
+
+// Al volver a la app (o cambiar el día/mes) refrescar el panel del mes actual
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") renderDashboard();
 });
 
 document.querySelectorAll("[data-view]").forEach(b => b.addEventListener("click", () => showView(b.dataset.view)));
@@ -168,6 +231,35 @@ window.editStudent = function (id) {
   window.scrollTo({ top: $("view-students")?.offsetTop || 0, behavior: "smooth" });
 };
 
+window.deleteStudent = async function (id) {
+  const s = data.students.find(x => x.id === id);
+  if (!s) return;
+
+  const recs = (data.abonos || []).filter(a => a.studentId === id).length;
+  const obs = (data.obligations || []).filter(o => o.studentId === id).length;
+  const extra = (recs || obs)
+    ? ` También se eliminarán ${recs} recibo(s) y ${obs} obligación(es) asociados a este alumno.`
+    : "";
+
+  const ok = await confirmDialog({
+    title: "Eliminar alumno",
+    message: `¿Estás seguro de eliminar a ${s.names} ${s.last} (${s.id})? Esta acción no se puede deshacer.${extra}`,
+    confirmText: "Sí, eliminar",
+    danger: true
+  });
+  if (!ok) return;
+
+  data.students = data.students.filter(x => x.id !== id);
+  data.abonos = (data.abonos || []).filter(a => a.studentId !== id);
+  data.obligations = (data.obligations || []).filter(o => o.studentId !== id);
+  if (editingStudentId === id) resetStudentForm();
+
+  await saveData();
+  renderStudents();
+  renderHistory();
+  notice("Alumno eliminado correctamente.");
+};
+
 function renderStudents() {
   if (!$("studentsList")) return;
   const q = ($("studentSearch")?.value || "").toLowerCase();
@@ -185,6 +277,7 @@ function renderStudents() {
   $("studentsList").innerHTML = `<table style="min-width: 650px;"><thead><tr><th>Alumno</th><th>Cédula / ID</th><th>Grupo</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>${arr.map(s => {
     const status = s.status || "Activo";
     const statusBadge = status === "Activo" ? `<span class="badge" style="background:#e6f7ed;color:#177344">Activo</span>` : `<span class="badge" style="background:#fde7e9;color:#a41327">Inactivo</span>`;
+    const cobrarBtn = status === "Activo" ? `<button class="mini-btn red" style="padding:6px 12px; font-weight:600;" data-pay-for="${s.id}">Cobrar</button> ` : "";
     return `<tr>
         <td><b>${esc(s.names)} ${esc(s.last)}</b></td>
         <td>${esc(s.cedula)}<span class="subline">${esc(s.id)}</span></td>
@@ -192,8 +285,8 @@ function renderStudents() {
         <td>${statusBadge}</td>
         <td>
             <div style="display:flex; gap:6px; flex-wrap:nowrap;">
-                <button class="mini-btn red" style="padding:6px 12px; font-weight:600;" data-pay-for="${s.id}">Cobrar</button> 
-                <button class="mini-btn" style="padding:6px 12px;" onclick="editStudent('${s.id}')">Editar</button>
+                ${cobrarBtn}<button class="mini-btn" style="padding:6px 12px;" onclick="editStudent('${s.id}')">Editar</button>
+                <button class="mini-btn danger" style="padding:6px 12px;" onclick="deleteStudent('${s.id}')">Eliminar</button>
             </div>
         </td>
      </tr>`;
@@ -279,7 +372,7 @@ $("btnImportStudentsCSV")?.addEventListener("change", (e) => {
 $("payStudentSearch")?.addEventListener("input", (e) => {
   const q = e.target.value.toLowerCase().trim(); const res = $("payStudentResults");
   if (q.length < 2) { res?.classList.add("hidden"); return; }
-  const arr = data.students.filter(s => [s.cedula, s.names, s.last].join(" ").toLowerCase().includes(q));
+  const arr = data.students.filter(s => (s.status || "Activo") !== "Inactivo" && [s.cedula, s.names, s.last].join(" ").toLowerCase().includes(q));
   if (res) {
     res.innerHTML = arr.length ? arr.map(s => `<div class="search-item" data-id="${s.id}"><b>${esc(s.names)} ${esc(s.last)}</b> - ${esc(s.cedula)}</div>`).join("") : '<div class="search-item muted">Sin resultados.</div>';
     res.querySelectorAll(".search-item[data-id]").forEach(el => el.addEventListener("click", () => selectStudentForPayment(el.dataset.id)));
@@ -297,6 +390,7 @@ $("payStudentClear")?.addEventListener("click", () => {
 
 function selectStudentForPayment(studentId) {
   const s = data.students.find(x => x.id === studentId); if (!s) return;
+  if ((s.status || "Activo") === "Inactivo") { notice("Este alumno está inactivo. Actívalo para poder registrar un pago.", true); return; }
   if ($("payStudentId")) $("payStudentId").value = s.id;
   $("payStudentSearch")?.classList.add("hidden"); $("payStudentResults")?.classList.add("hidden");
   $("payStudentSelected")?.classList.remove("hidden");
@@ -316,17 +410,51 @@ function tariffFor(concept, type) {
   return data.tariffs.other;
 }
 
-function updateSuggestedAmount() {
+function recomputeAmount() {
   const concept = $("payConcept")?.value;
-  $("monthlyTypeWrap")?.classList.toggle("hidden", concept !== "Mensualidad");
   const suggested = Number(tariffFor(concept, $("monthlyType")?.value)).toFixed(2);
   if ($("payAmount")) $("payAmount").value = suggested;
   if ($("payAbono")) $("payAbono").value = suggested;
   updateBalance();
 }
 
+// Mensualidad: sin recargo hasta el día 15; después se ofrece aplicar el recargo
+function syncLateFee() {
+  const isMonthly = $("payConcept")?.value === "Mensualidad";
+  $("monthlyTypeWrap")?.classList.toggle("hidden", !isMonthly);
+  if (!isMonthly) { if ($("monthlyType")) $("monthlyType").value = "normal"; return; }
+
+  const past = isPastDue($("recordDate")?.value);
+  const diff = Number(data.tariffs.late) - Number(data.tariffs.normal);
+  const toggle = $("lateFeeToggle");
+  const label = $("lateFeeLabel");
+  const hint = $("lateFeeHint");
+
+  if (!past) {
+    if (toggle) { toggle.checked = false; toggle.disabled = true; }
+    if ($("monthlyType")) $("monthlyType").value = "normal";
+    if (label) label.textContent = "Sin recargo por atraso (hasta el 15)";
+    if (hint) hint.textContent = "La mensualidad no tiene recargo si se paga hasta el día 15.";
+  } else {
+    if (toggle) { toggle.disabled = false; toggle.checked = true; }
+    if ($("monthlyType")) $("monthlyType").value = "late";
+    if (label) label.textContent = `Aplicar recargo por atraso (+${money(diff)})`;
+    if (hint) hint.textContent = "Después del día 15 puedes aplicar o no el recargo.";
+  }
+}
+
+function updateSuggestedAmount() {
+  syncLateFee();
+  recomputeAmount();
+}
+
 $("payConcept")?.addEventListener("change", updateSuggestedAmount);
+$("recordDate")?.addEventListener("change", updateSuggestedAmount);
 $("monthlyType")?.addEventListener("change", updateSuggestedAmount);
+$("lateFeeToggle")?.addEventListener("change", () => {
+  if ($("monthlyType")) $("monthlyType").value = $("lateFeeToggle").checked ? "late" : "normal";
+  recomputeAmount();
+});
 $("payAbono")?.addEventListener("input", updateBalance);
 $("payAmount")?.addEventListener("input", updateBalance);
 
@@ -338,6 +466,11 @@ function updateBalance() {
 
 $("paymentForm")?.addEventListener("reset", () => setTimeout(() => {
   if ($("recordDate")) $("recordDate").value = today();
+  if ($("payStudentId")) $("payStudentId").value = "";
+  if ($("payStudentSearch")) $("payStudentSearch").value = "";
+  $("payStudentSearch")?.classList.remove("hidden");
+  $("payStudentSelected")?.classList.add("hidden");
+  $("payStudentResults")?.classList.add("hidden");
   resetPaymentFormToNew();
 }, 0));
 
@@ -389,7 +522,12 @@ function renderReceipt(p) {
     
     <div class="receipt-paper" id="receiptPaper" style="padding:0; overflow:hidden; border:1px solid #ddd; border-radius:8px; background:#fff;">
         <div style="background-color: #211e1e; color: #fff; padding: 20px; display: flex; align-items: center; gap: 15px;">
-            <img src="./img/Pum.png" alt="Logo" style="width: 70px; height: 70px; border-radius: 50%; object-fit: cover; background: #fff; padding: 2px;">
+            <img
+    class="receipt-logo"
+    src="./img/Pum.png?v=2"
+    alt="Sello Club Los Pumas"
+    style="width: 70px; height: 70px; border-radius: 50%; object-fit: contain; background: #fff; padding: 2px;"
+>
             <div>
                 <h2 style="margin: 0 0 5px 0; font-size: 16.5px; line-height: 1.1; font-family: Arial, sans-serif;">Club Deportivo Formativo Especializado<br>Los Pumas</h2>
                 <p style="margin: 0; font-size: 10px; color: #d4d4d4; line-height: 1.4;">SANTA ISABEL, CALLE<br>QUEVEDO Y PICHINCHA<br>CEL: 0984302599</p>
@@ -437,19 +575,89 @@ function renderReceipt(p) {
     <div class="receipt-actions" style="margin-top: 20px;">
         <button class="secondary" id="downloadReceipt">📥 Descargar PDF</button>
         <button class="primary" id="shareReceiptPdf">📄 Compartir PDF</button>
+        <button class="secondary" id="shareReceiptWhatsApp">📱 Enviar texto por WhatsApp</button>
+        <button class="danger" id="deleteReceiptFromResult">🗑️ Eliminar recibo</button>
     </div>`;
 
   $("downloadReceipt")?.addEventListener("click", () => downloadPdf(p));
   $("shareReceiptPdf")?.addEventListener("click", () => shareReceiptPdf(p));
+  $("shareReceiptWhatsApp")?.addEventListener("click", () => shareReceiptWhatsAppText(p));
+  $("deleteReceiptFromResult")?.addEventListener("click", async () => {
+    await deleteReceipt(p.receipt);
+    if (!data.abonos.some(a => a.receipt === p.receipt)) {
+      box.classList.add("hidden");
+      box.innerHTML = "";
+    }
+  });
   box.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-function buildPdfDoc(p) {
+// --- CARGA DEL SELLO DEL CLUB ---
+// El PNG original medía 7123x7123px (más de 50 millones de píxeles), lo que
+// supera el límite de canvas de Android y dejaba el sello en blanco en el PDF.
+// Ahora se usa una versión de 512x512 (ver ?v=2 para forzar la actualización en
+// teléfonos que aún tengan la imagen grande en caché).
+const LOGO_SRC = "./img/Pum.png?v=2";
+let logoPromise = null;
+
+function loadLogoImage() {
+  if (logoPromise) return logoPromise;
+  logoPromise = new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      let result = img;
+      try {
+        const max = 512;
+        const scale = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+        const w = Math.max(1, Math.round(img.naturalWidth * scale));
+        const h = Math.max(1, Math.round(img.naturalHeight * scale));
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        ctx.clearRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        const dataUrl = canvas.toDataURL("image/png");
+        if (dataUrl && dataUrl.length > 100) result = dataUrl;
+      } catch (e) {
+        result = img; // Respaldo: usar la imagen original si el canvas falla
+      }
+      resolve(result);
+    };
+    img.onerror = () => {
+      logoPromise = null; // Permite reintentar en la próxima llamada
+      // Respaldo: usar la imagen que ya se ve en el recibo en pantalla
+      const domImg = document.querySelector("#receiptPaper .receipt-logo");
+      if (domImg && domImg.complete && domImg.naturalWidth > 0) {
+        resolve(domImg);
+      } else {
+        console.warn("No se pudo cargar el sello del Club Los Pumas.");
+        resolve(null);
+      }
+    };
+    img.src = LOGO_SRC;
+  });
+  return logoPromise;
+}
+
+// Precargar el sello para que el botón Compartir no pierda la interacción del usuario
+window.addEventListener("load", () => { loadLogoImage().catch(() => {}); });
+
+function buildPdfDoc(p, logo) {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ format: 'a5' });
 
+  // Franja superior oscura (igual que el recibo en pantalla)
   doc.setFillColor(33, 30, 30);
-  doc.rect(0, 0, 148, 42, 'F');
+  doc.rect(0, 0, 148, 44, 'F');
+
+  if (logo) {
+    try {
+      doc.addImage(logo, "PNG", 12, 6, 28, 28);
+    } catch (e) {
+      console.warn("No se pudo incrustar el sello:", e);
+    }
+  }
 
   doc.setTextColor(255, 255, 255);
   doc.setFont("helvetica", "bold");
@@ -513,63 +721,68 @@ function buildPdfDoc(p) {
   return doc;
 }
 
-function downloadPdf(p) {
+async function downloadPdf(p) {
   if (!window.jspdf) { notice("Requiere internet para el PDF.", true); return; }
-  const doc = buildPdfDoc(p);
-  const logo = new Image();
-  logo.src = './img/Pum.png';
-  logo.onload = function () {
-    doc.addImage(logo, 'PNG', 12, 6, 28, 28);
-    doc.save(`Recibo_${p.receipt}.pdf`);
-  };
-  logo.onerror = function () { doc.save(`Recibo_${p.receipt}.pdf`); };
+  let logo = null;
+  try { logo = await loadLogoImage(); } catch (e) { console.warn(e); }
+  const doc = buildPdfDoc(p, logo);
+  doc.save(`Recibo_${p.receipt}.pdf`);
 }
 
-// Función directa y limpia para invocar el menú nativo de compartir PDF
+// Invoca el menú nativo de compartir del celular con el PDF adjunto
 async function shareReceiptPdf(p) {
   if (!window.jspdf) { notice("Requiere internet para el PDF.", true); return; }
-
-  const doc = buildPdfDoc(p);
-  const logo = new Image();
-  logo.src = './img/Pum.png';
-
-  logo.onload = async function () {
-    try {
-      doc.addImage(logo, 'PNG', 12, 6, 28, 28);
-      await executeNativeShare(doc, p);
-    } catch (e) {
-      await executeNativeShare(doc, p);
-    }
-  };
-
-  logo.onerror = async function () {
-    await executeNativeShare(doc, p);
-  };
+  let logo = null;
+  try { logo = await loadLogoImage(); } catch (e) { console.warn(e); }
+  const doc = buildPdfDoc(p, logo);
+  await executeNativeShare(doc, p);
 }
 
 async function executeNativeShare(doc, p) {
-  try {
-    const pdfBlob = doc.output('blob');
-    const file = new File([pdfBlob], `Recibo_${p.receipt}.pdf`, { type: 'application/pdf' });
+  const fileName = `Recibo_${p.receipt}.pdf`;
+  const title = `Recibo ${p.receipt} - Club Los Pumas`;
 
-    // Forzamos la apertura directa del menú nativo del celular sin bloqueos previos de compatibilidad
-    if (navigator.share) {
-      await navigator.share({
-        files: [file],
-        title: `Recibo ${p.receipt} - Club Los Pumas`
-      });
-      return;
-    }
-  } catch (err) {
-    if (err.name === 'AbortError') {
-      return; // Si cancelas el menú a propósito, no hace nada
-    }
-    console.log("Error al invocar el compartidor nativo:", err);
+  let file;
+  try {
+    file = new File([doc.output('blob')], fileName, { type: 'application/pdf' });
+  } catch (e) {
+    doc.save(fileName);
+    notice("📥 PDF descargado en tu dispositivo.");
+    return;
   }
 
-  // Si el navegador del celular no soporta esta función por completo, realiza la descarga como respaldo
-  doc.save(`Recibo_${p.receipt}.pdf`);
+  // Compartir el PDF CON un mensaje predefinido (WhatsApp lo usa como pie de mensaje)
+  const withMessage = { files: [file], text: getReceiptMessage(p), title };
+  const fileOnly = { files: [file], title };
+
+  if (navigator.share && navigator.canShare) {
+    try {
+      if (navigator.canShare(withMessage)) {
+        await navigator.share(withMessage);
+        return;
+      }
+      // Si el navegador no admite texto junto al archivo, comparte solo el PDF
+      if (navigator.canShare(fileOnly)) {
+        await navigator.share(fileOnly);
+        return;
+      }
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        return; // Si cancelas el menú a propósito, no hace nada
+      }
+      console.log("Error al invocar el compartidor nativo:", err);
+    }
+  }
+
+  // Si el navegador del celular no soporta compartir archivos, se descarga como respaldo
+  doc.save(fileName);
   notice("📥 PDF descargado en tu dispositivo.");
+}
+
+// Abre WhatsApp con el mensaje del comprobante (útil cuando el equipo no adjunta texto al PDF)
+function shareReceiptWhatsAppText(p) {
+  const url = "https://wa.me/?text=" + encodeURIComponent(getReceiptMessage(p));
+  window.open(url, "_blank");
 }
 
 // --- HISTORIAL CON BUSCADOR DE ALUMNO Y CONTEO TOTAL ---
@@ -663,8 +876,14 @@ function renderHistory() {
   document.querySelectorAll("[data-receipt]").forEach(b => b.addEventListener("click", () => { const p = arr.find(x => x.receipt === b.dataset.receipt); if (p) renderReceipt(p); showView("payment"); }));
 }
 
-window.deleteReceipt = function(receiptNum) {
-  if (!confirm(`¿Estás seguro de eliminar el comprobante ${receiptNum}? Esta acción devolverá el monto abonado a la deuda pendiente.`)) return;
+window.deleteReceipt = async function(receiptNum) {
+  const ok = await confirmDialog({
+    title: "Eliminar comprobante",
+    message: `¿Estás seguro de eliminar el comprobante ${receiptNum}? Esta acción devolverá el monto abonado a la deuda pendiente.`,
+    confirmText: "Sí, eliminar",
+    danger: true
+  });
+  if (!ok) return;
 
   const abonoIdx = data.abonos.findIndex(a => a.receipt === receiptNum);
   if (abonoIdx === -1) return;
@@ -699,8 +918,14 @@ $("tariffForm")?.addEventListener("submit", e => {
   saveData(); notice("Tarifas guardadas.");
 });
 
-$("resetTariffs")?.addEventListener("click", () => {
-  if (confirm("¿Restablecer tarifas por defecto?")) { data.tariffs = { ...defaultTariffs }; saveData(); fillTariffs(); notice("Tarifas restablecidas."); }
+$("resetTariffs")?.addEventListener("click", async () => {
+  const ok = await confirmDialog({
+    title: "Restablecer tarifas",
+    message: "¿Restablecer las tarifas por defecto? Se perderán los valores actuales.",
+    confirmText: "Sí, restablecer",
+    danger: true
+  });
+  if (ok) { data.tariffs = { ...defaultTariffs }; saveData(); fillTariffs(); notice("Tarifas restablecidas."); }
 });
 
 // --- COPIAS DE SEGURIDAD ---
@@ -720,11 +945,17 @@ $("btnImportData")?.addEventListener("change", e => {
   if (!file) return;
 
   const reader = new FileReader();
-  reader.onload = function (event) {
+  reader.onload = async function (event) {
     try {
       const importedData = JSON.parse(event.target.result);
       if (importedData.students && importedData.obligations && importedData.abonos) {
-        if (confirm("¿Restaurar respaldo? Se sobreescribirán los registros.")) {
+        const ok = await confirmDialog({
+          title: "Restaurar respaldo",
+          message: "¿Restaurar respaldo? Se sobreescribirán los registros actuales. Esta acción no se puede deshacer.",
+          confirmText: "Sí, restaurar",
+          danger: true
+        });
+        if (ok) {
           data = importedData;
           saveData();
           notice("Datos restaurados.");
@@ -744,6 +975,70 @@ function renderDashboard() {
   if ($("statStudents")) $("statStudents").textContent = data.students.filter(s => s.status !== "Inactivo").length;
   if ($("statPayments")) $("statPayments").textContent = data.abonos.length;
   if ($("statRevenue")) $("statRevenue").textContent = money(data.abonos.reduce((s, a) => s + a.amount, 0));
+
+  // Mensualidades del mes en curso
+  const monthKey = today().slice(0, 7);
+  const active = data.students.filter(s => s.status !== "Inactivo");
+  const paid = active.filter(s => hasPaidMonthly(s.id, monthKey));
+  const debtors = active.filter(s => !hasPaidMonthly(s.id, monthKey));
+  const late = isPastDue(today());
+  const rate = Number(late ? data.tariffs.late : data.tariffs.normal) || 0;
+  const monthPending = debtors.length * rate;
+
+  if ($("statPendingLabel")) $("statPendingLabel").textContent = `Mensualidad ${monthLabel(monthKey)} por cobrar`;
+  if ($("statPending")) $("statPending").textContent = money(monthPending);
+
+  // Actividad reciente: últimos 5 recibos
+  const recent = [...(data.abonos || [])]
+    .sort((a, b) => (b.recordDate || "").localeCompare(a.recordDate || "") || String(b.receipt).localeCompare(String(a.receipt)))
+    .slice(0, 5);
+  const recentBox = $("dashRecent");
+  if (recentBox) {
+    recentBox.innerHTML = recent.length ? recent.map(a => {
+      const p = getJoinedReceipt(a);
+      return `<div class="activity-item">
+        <div class="activity-main">
+          <b>${esc(p.studentName)}</b>
+          <span class="subline">${esc(p.concept)} · ${esc(p.recordDate)} · ${esc(p.receipt)}</span>
+        </div>
+        <div class="activity-amount">
+          <span class="amt">${money(p.amount)}</span>
+          <button class="mini-btn red" data-receipt="${esc(p.receipt)}">Ver</button>
+        </div>
+      </div>`;
+    }).join("") : '<div class="empty-state">Aún no hay pagos registrados.</div>';
+    recentBox.querySelectorAll("[data-receipt]").forEach(b => b.addEventListener("click", () => {
+      const p = data.abonos.map(getJoinedReceipt).find(x => x.receipt === b.dataset.receipt);
+      if (p) { renderReceipt(p); showView("payment"); }
+    }));
+  }
+
+  // Panel de mensualidades del mes
+  const monthlyBadge = $("dashMonthlyBadge");
+  if (monthlyBadge) monthlyBadge.textContent = `${paid.length}/${active.length} pagaron`;
+  const monthlyTitle = $("dashMonthlyTitle");
+  if (monthlyTitle) monthlyTitle.textContent = `Mensualidades · ${monthLabel(monthKey)}`;
+  const monthlyProgress = $("dashMonthlyProgress");
+  if (monthlyProgress) monthlyProgress.style.width = active.length ? `${Math.round((paid.length / active.length) * 100)}%` : "0%";
+  const monthlyHint = $("dashMonthlyHint");
+  if (monthlyHint) monthlyHint.textContent = late
+    ? `Después del día 15 aplica recargo: ${money(rate)} por alumno.`
+    : `Sin recargo hasta el 15. Tarifa normal: ${money(rate)}.`;
+
+  const monthList = $("dashMonthlyList");
+  if (monthList) {
+    monthList.innerHTML = debtors.length ? debtors.map(s => `<div class="debtor-item">
+        <div>
+          <b>${esc(s.names)} ${esc(s.last)}</b>
+          <span class="subline">${esc(s.cedula)} · ${esc(s.group || "")}</span>
+        </div>
+        <div class="debtor-right">
+          <span class="amt-red">${money(rate)}</span>
+          <button class="mini-btn red" data-pay-for="${s.id}">Cobrar</button>
+        </div>
+      </div>`).join("") : '<div class="empty-state">¡Todos al día este mes! 🎉</div>';
+    monthList.querySelectorAll("[data-pay-for]").forEach(b => b.addEventListener("click", () => { showView("payment"); selectStudentForPayment(b.dataset.payFor); }));
+  }
 }
 
 function renderAll() {
