@@ -370,11 +370,6 @@ function getJoinedReceipt(abono) {
   return { ...abono, total: ob.total || 0, balance: ob.balance || 0, monthlyType: ob.monthlyType || 'normal' };
 }
 
-// Generar mensaje detallado para WhatsApp
-function getReceiptMessage(p) {
-  return `*CLUB LOS PUMAS* 🐆\n_Comprobante de Movimiento_\n\n*Recibo:* ${p.receipt}\n*Alumno:* ${p.studentName}\n*Concepto:* ${p.concept}\n*Fecha:* ${p.recordDate}\n\n*Total a pagar:* ${money(p.total)}\n*Abono:* 💵 ${money(p.amount)}\n*Saldo pendiente:* 🔴 ${money(p.balance)}${p.notes ? `\n*Nota:* ${p.notes}` : ''}`;
-}
-
 // --- RECIBO Y PDF ---
 function renderReceipt(p) {
   const box = $("receiptResult");
@@ -520,7 +515,7 @@ function generatePdfDocument(p) {
   return doc;
 }
 
-// Manejador multiplataforma optimizado para celulares y computadoras (envío físico de PDF o fallback)
+// Manejador directo para compartir el archivo PDF físico (sin redirecciones a mensajes de texto)
 async function handlePdfAction(p, actionType) {
   if (!window.jspdf) { notice("Requiere internet para el PDF.", true); return; }
 
@@ -534,41 +529,26 @@ async function handlePdfAction(p, actionType) {
     }
 
     if (actionType === 'share') {
-      const textMsg = getReceiptMessage(p);
       const pdfBlob = doc.output('blob');
       const file = new File([pdfBlob], `Recibo_${p.receipt}.pdf`, { type: 'application/pdf' });
 
-      // Verificamos si el dispositivo soporta compartir archivos nativamente (Celulares y tablets)
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      // Abrimos directamente el selector nativo del sistema operativo con el archivo PDF adjunto
+      if (navigator.share) {
         try {
           await navigator.share({
             files: [file],
-            title: `Recibo ${p.receipt} - Club Los Pumas`,
-            text: `Estimado/a ${p.studentName}, adjunto el comprobante de su pago en Club Los Pumas.`
+            title: `Recibo ${p.receipt} - Club Los Pumas`
           });
           return;
         } catch (shareErr) {
-          if (shareErr.name !== 'AbortError') {
-            console.log("El usuario canceló o falló el share nativo:", shareErr);
-          }
-          return;
+          if (shareErr.name === 'AbortError') return; // El usuario cerró el menú
+          console.warn("Error en navigator.share con archivo:", shareErr);
         }
       }
 
-      // Alternativa automática para computadoras o navegadores de escritorio
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        try {
-          await navigator.clipboard.writeText(textMsg.replace(/\\n/g, '\n'));
-        } catch (e) {}
-      }
-
+      // Alternativa por si se abre desde una computadora de escritorio que no permite compartir archivos
       doc.save(`Recibo_${p.receipt}.pdf`);
-
-      setTimeout(() => {
-        const waUrl = `https://wa.me/?text=${encodeURIComponent(textMsg.replace(/\\n/g, '\n'))}`;
-        window.open(waUrl, "_blank", "noopener");
-        notice("📥 PDF descargado y mensaje copiado. ¡Adjúntalo en WhatsApp!");
-      }, 300);
+      notice("📥 PDF descargado. Adjúntalo manualmente en WhatsApp.");
     }
   } catch (err) {
     console.error("Error al procesar el PDF:", err);
