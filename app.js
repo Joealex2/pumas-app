@@ -452,7 +452,7 @@ function renderReceipt(p) {
     
     <div class="receipt-actions" style="margin-top: 20px;">
         <button class="secondary" id="downloadReceipt">📥 Descargar PDF</button>
-        <button class="primary btn-whatsapp-green" id="shareReceiptPdf">📄 Compartir PDF WhatsApp</button>
+        <button class="primary btn-whatsapp-green" id="shareReceiptPdf">💬 Compartir PDF WhatsApp</button>
     </div>`;
 
   $("downloadReceipt")?.addEventListener("click", () => handlePdfAction(p, 'download'));
@@ -674,7 +674,7 @@ function renderHistory() {
     <td>${money(p.balance)}</td>
     <td>
       <div style="display:flex; gap:6px;">
-        <button class="mini-btn red" data-receipt="${p.receipt}">Ver PDF</button>
+        <button class="mini-btn red" data-receipt="${p.receipt}">Ver PDF físico</button>
         <button class="mini-btn danger" onclick="deleteReceipt('${p.receipt}')">Eliminar</button>
       </div>
     </td>
