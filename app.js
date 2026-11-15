@@ -375,7 +375,7 @@ function getReceiptMessage(p) {
   return `*CLUB LOS PUMAS* 🐆\n_Comprobante de Movimiento_\n\n*Recibo:* ${p.receipt}\n*Alumno:* ${p.studentName}\n*Concepto:* ${p.concept}\n*Fecha:* ${p.recordDate}\n\n*Total a pagar:* ${money(p.total)}\n*Abono:* 💵 ${money(p.amount)}\n*Saldo pendiente:* 🔴 ${money(p.balance)}${p.notes ? `\n*Nota:* ${p.notes}` : ''}`;
 }
 
-// --- RECIBO Y PDF (Solo 2 botones: Descargar y el botón rojo de Compartir PDF) ---
+// --- RECIBO Y PDF ---
 function renderReceipt(p) {
   const box = $("receiptResult");
   if (!box) return;
@@ -525,6 +525,7 @@ function downloadPdf(p) {
   logo.onerror = function () { doc.save(`Recibo_${p.receipt}.pdf`); };
 }
 
+// Función directa y limpia para invocar el menú nativo de compartir PDF
 async function shareReceiptPdf(p) {
   if (!window.jspdf) { notice("Requiere internet para el PDF.", true); return; }
 
@@ -535,23 +536,24 @@ async function shareReceiptPdf(p) {
   logo.onload = async function () {
     try {
       doc.addImage(logo, 'PNG', 12, 6, 28, 28);
-      await triggerNativeShare(doc, p);
+      await executeNativeShare(doc, p);
     } catch (e) {
-      await triggerNativeShare(doc, p);
+      await executeNativeShare(doc, p);
     }
   };
 
   logo.onerror = async function () {
-    await triggerNativeShare(doc, p);
+    await executeNativeShare(doc, p);
   };
 }
 
-async function triggerNativeShare(doc, p) {
+async function executeNativeShare(doc, p) {
   try {
     const pdfBlob = doc.output('blob');
     const file = new File([pdfBlob], `Recibo_${p.receipt}.pdf`, { type: 'application/pdf' });
 
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    // Forzamos la apertura directa del menú de compartir archivos de Android/iOS/PC
+    if (navigator.share) {
       await navigator.share({
         files: [file],
         title: `Recibo ${p.receipt} - Club Los Pumas`
@@ -560,11 +562,13 @@ async function triggerNativeShare(doc, p) {
     }
   } catch (err) {
     if (err.name !== 'AbortError') {
-      console.log("Web Share nativo falló:", err);
+      console.log("Error al compartir nativamente:", err);
+    } else {
+      return; // El usuario canceló el menú, no hacemos nada
     }
   }
 
-  // Fallback: Descarga directa si el dispositivo no soporta compartir archivos nativamente
+  // Fallback si el dispositivo no soporta compartir archivos directamente
   doc.save(`Recibo_${p.receipt}.pdf`);
   notice("📥 PDF descargado para compartir.");
 }
