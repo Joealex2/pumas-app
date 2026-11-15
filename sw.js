@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pumas-cache-v15';
+const CACHE_NAME = 'pumas-cache-v16';
 const ASSETS = [
   './',
   './index.html',
