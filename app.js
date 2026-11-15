@@ -528,12 +528,13 @@ function downloadPdf(p) {
 }
 
 async function shareReceiptPdf(p) {
-  const textMsg = getReceiptMessage(p);
+  // Aquí agregamos el encabezado personalizado con el nombre del deportista
+  const introText = `📄 *Recibo para:* ${p.studentName}\n\n`;
+  const textMsg = introText + getReceiptMessage(p);
 
   if (navigator.clipboard && navigator.clipboard.writeText) {
     try {
       await navigator.clipboard.writeText(textMsg.replace(/\\n/g, '\n'));
-      notice("📋 Resumen copiado. Abriendo WhatsApp con el PDF...");
     } catch (e) {}
   }
 
