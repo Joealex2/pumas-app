@@ -440,63 +440,31 @@ function renderReceipt(p) {
         <button class="secondary btn-whatsapp-green" id="sendWhatsappText">💬 Enviar Mensaje WhatsApp</button>
     </div>`;
 
-  $("downloadReceipt")?.addEventListener("click", () => generateAndActionPdf(p, 'download'));
-  $("shareReceiptPdf")?.addEventListener("click", () => generateAndActionPdf(p, 'share'));
+  $("downloadReceipt")?.addEventListener("click", () => handlePdfAction(p, 'download'));
+  $("shareReceiptPdf")?.addEventListener("click", () => handlePdfAction(p, 'share'));
   $("sendWhatsappText")?.addEventListener("click", () => sendWhatsappMessage(p));
   box.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-// Función unificada para convertir la imagen a Base64 e incrustarla de forma segura en jsPDF
-function generateAndActionPdf(p, actionType) {
-  if (!window.jspdf) { notice("Requiere internet para el PDF.", true); return; }
-
-  const img = new Image();
-  img.crossOrigin = "Anonymous";
-  img.src = './img/Pum.png';
-
-  img.onload = function () {
-    try {
-      const canvas = document.createElement('canvas');
-      canvas.width = img.width;
-      canvas.height = img.height;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0);
-      const dataURL = canvas.toDataURL('image/png');
-
-      const doc = buildPdfDocWithBase64Logo(p, dataURL);
-      executePdfAction(doc, p, actionType);
-    } catch (e) {
-      console.error("Error procesando el logo en canvas:", e);
-      const doc = buildPdfDocWithBase64Logo(p, null);
-      executePdfAction(doc, p, actionType);
-    }
-  };
-
-  img.onerror = function () {
-    console.warn("No se pudo cargar la imagen del logo, generando PDF sin logo.");
-    const doc = buildPdfDocWithBase64Logo(p, null);
-    executePdfAction(doc, p, actionType);
-  };
-}
-
-function buildPdfDocWithBase64Logo(p, base64Logo) {
+// Generador de PDF totalmente síncrono y seguro para celulares (sin bloqueos de imágenes externas)
+function generatePdfDocument(p) {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ format: 'a5' });
 
+  // Encabezado principal
   doc.setFillColor(33, 30, 30);
   doc.rect(0, 0, 148, 42, 'F');
 
-  if (base64Logo) {
-    try {
-      doc.addImage(base64Logo, 'PNG', 12, 6, 28, 28);
-    } catch (err) {
-      console.error("Error al añadir imagen Base64 al PDF:", err);
-    }
-  }
-
-  doc.setTextColor(255, 255, 255);
+  // Círculo decorativo e iniciales representativas del sello si no carga la imagen de red local
+  doc.setFillColor(255, 255, 255);
+  doc.circle(26, 21, 14, 'F');
+  doc.setTextColor(199, 25, 45);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(14);
+  doc.text("LP", 20, 25);
+
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(13);
   doc.text("Club Deportivo Formativo Especializado", 46, 16);
   doc.text("Los Pumas", 46, 23);
 
@@ -505,6 +473,7 @@ function buildPdfDocWithBase64Logo(p, base64Logo) {
   doc.text("SANTA ISABEL, CALLE QUEVEDO Y PICHINCHA", 46, 31);
   doc.text("CEL: 0984302599", 46, 36);
 
+  // Cuerpo del recibo
   doc.setTextColor(0, 0, 0);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(22);
@@ -544,6 +513,7 @@ function buildPdfDocWithBase64Logo(p, base64Logo) {
   doc.text("Pago Total:", 72, 160.5); doc.text(money(p.amount), 98, 160.5);
   doc.line(98, 162, 125, 162);
 
+  // Firma
   doc.setFont("times", "italic"); doc.setFontSize(22);
   doc.text("G Gavilanez", 105, 182, { align: "center" });
   doc.setDrawColor(0, 0, 0); doc.line(80, 185, 130, 185);
@@ -556,33 +526,37 @@ function buildPdfDocWithBase64Logo(p, base64Logo) {
   return doc;
 }
 
-// Acción segura y fluida para evitar bloqueos en el navegador móvil
-async function executePdfAction(doc, p, actionType) {
-  const textMsg = getReceiptMessage(p);
+// Manejador directo de acciones sin bloqueos de promesas externas
+async function handlePdfAction(p, actionType) {
+  if (!window.jspdf) { notice("Requiere internet para el PDF.", true); return; }
 
-  if (actionType === 'download') {
-    doc.save(`Recibo_${p.receipt}.pdf`);
-    return;
-  }
+  try {
+    const doc = generatePdfDocument(p);
 
-  if (actionType === 'share') {
-    // 1. Copiar texto al portapapeles
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      try {
-        await navigator.clipboard.writeText(textMsg.replace(/\\n/g, '\n'));
-      } catch (e) {}
+    if (actionType === 'download') {
+      doc.save(`Recibo_${p.receipt}.pdf`);
+      notice("📥 ¡Recibo descargado con éxito!");
+      return;
     }
 
-    // 2. Descargar PDF automáticamente en el dispositivo
-    try {
-      doc.save(`Recibo_${p.receipt}.pdf`);
-    } catch (e) {}
+    if (actionType === 'share') {
+      const textMsg = getReceiptMessage(p);
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        try {
+          await navigator.clipboard.writeText(textMsg.replace(/\\n/g, '\n'));
+        } catch (e) {}
+      }
 
-    // 3. Abrir WhatsApp de manera limpia sin congelar la interfaz
-    setTimeout(() => {
-      sendWhatsappMessage(p);
-      notice("📋 Resumen copiado y PDF descargado. ¡Adjúntalo en WhatsApp!");
-    }, 400);
+      doc.save(`Recibo_${p.receipt}.pdf`);
+
+      setTimeout(() => {
+        sendWhatsappMessage(p);
+        notice("📋 Resumen copiado y PDF descargado. ¡Adjúntalo en WhatsApp!");
+      }, 300);
+    }
+  } catch (err) {
+    console.error("Error al generar o exportar el PDF:", err);
+    notice("Ocurrió un error al procesar el PDF.", true);
   }
 }
 
