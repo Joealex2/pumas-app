@@ -556,6 +556,7 @@ function buildPdfDocWithBase64Logo(p, base64Logo) {
   return doc;
 }
 
+// Acción segura y fluida para evitar bloqueos en el navegador móvil
 async function executePdfAction(doc, p, actionType) {
   const textMsg = getReceiptMessage(p);
 
@@ -565,32 +566,23 @@ async function executePdfAction(doc, p, actionType) {
   }
 
   if (actionType === 'share') {
+    // 1. Copiar texto al portapapeles
     if (navigator.clipboard && navigator.clipboard.writeText) {
       try {
         await navigator.clipboard.writeText(textMsg.replace(/\\n/g, '\n'));
-        notice("📋 Resumen copiado. Abriendo WhatsApp con el PDF...");
       } catch (e) {}
     }
 
-    if (navigator.share) {
-      try {
-        const pdfBlob = doc.output('blob');
-        const file = new File([pdfBlob], `Recibo_${p.receipt}.pdf`, { type: 'application/pdf' });
+    // 2. Descargar PDF automáticamente en el dispositivo
+    try {
+      doc.save(`Recibo_${p.receipt}.pdf`);
+    } catch (e) {}
 
-        if (navigator.canShare && navigator.canShare({ files: [file] })) {
-          await navigator.share({
-            files: [file],
-            title: `Recibo ${p.receipt} - Club Los Pumas`,
-            text: textMsg
-          });
-          return;
-        }
-      } catch (err) {
-        console.log("Web Share nativo falló o fue cancelado:", err);
-      }
-    }
-
-    sendWhatsappMessage(p);
+    // 3. Abrir WhatsApp de manera limpia sin congelar la interfaz
+    setTimeout(() => {
+      sendWhatsappMessage(p);
+      notice("📋 Resumen copiado y PDF descargado. ¡Adjúntalo en WhatsApp!");
+    }, 400);
   }
 }
 
