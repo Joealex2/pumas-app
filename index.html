@@ -205,6 +205,24 @@
           .catch(err => console.log('Error PWA:', err));
       });
     }
+<!-- SDKs de Firebase (Firestore y Core) -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <!-- El parámetro ?v=99 rompe la caché vieja del navegador inmediatamente -->
+  <script src="./app.js?v=99"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js?v=99')
+          .then(reg => {
+            reg.update();
+            console.log('PWA actualizada:', reg.scope);
+          })
+          .catch(err => console.log('Error PWA:', err));
+      });
+    }
   </script>
 </body>
 </html>
