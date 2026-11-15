@@ -1,9 +1,9 @@
-const CACHE_NAME = 'pumas-cache-v100';
+const CACHE_NAME = 'pumas-cache-stable';
 const ASSETS = [
   './',
   './index.html',
   './styles.css',
-  './app.js?v=99',
+  './app.js',
   './manifest.json',
   './img/Pum.png'
 ];
@@ -24,9 +24,8 @@ self.addEventListener('activate', event => {
 });
 
 self.addEventListener('fetch', event => {
-  // Evitar caché agresiva para siempre bajar la última versión si hay internet
   event.respondWith(
-    fetch(event.request, { cache: 'no-store' })
+    fetch(event.request)
       .then(response => {
         if (response && response.status === 200 && response.type === 'basic') {
           const resClone = response.clone();
