@@ -27,26 +27,6 @@ let data = {
   nextObligation: 1
 };
 
-// Precargar el sello del club en Base64 al abrir la app para usarlo de forma instantánea en el PDF
-let cachedLogoBase64 = null;
-function preloadClubLogo() {
-  const img = new Image();
-  img.crossOrigin = "Anonymous";
-  img.src = './img/Pum.png';
-  img.onload = function () {
-    try {
-      const canvas = document.createElement('canvas');
-      canvas.width = img.width || 200;
-      canvas.height = img.height || 200;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0);
-      cachedLogoBase64 = canvas.toDataURL('image/png');
-    } catch (e) {
-      console.warn("No se pudo convertir el logo a Base64:", e);
-    }
-  };
-}
-
 // Cargar datos desde Cloud Firestore
 async function loadData() {
   try {
@@ -105,9 +85,8 @@ function showView(name) {
   if (name === "tariffs") fillTariffs();
 }
 
-// Inicio automático cargando desde la nube y precargando el sello
+// Inicio automático cargando desde la nube
 window.addEventListener("DOMContentLoaded", async () => {
-  preloadClubLogo();
   await loadData();
   showView("dashboard");
   if ($("recordDate")) $("recordDate").value = today();
@@ -205,7 +184,7 @@ function renderStudents() {
 
   $("studentsList").innerHTML = `<table style="min-width: 650px;"><thead><tr><th>Alumno</th><th>Cédula / ID</th><th>Grupo</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>${arr.map(s => {
     const status = s.status || "Activo";
-    const statusBadge = status === "Activo" ? `<span class="badge" style="background:#ecfdf5;color:#10b981">Activo</span>` : `<span class="badge" style="background:#fef2f2;color:#dc2626">Inactivo</span>`;
+    const statusBadge = status === "Activo" ? `<span class="badge" style="background:#e6f7ed;color:#177344">Activo</span>` : `<span class="badge" style="background:#fde7e9;color:#a41327">Inactivo</span>`;
     return `<tr>
         <td><b>${esc(s.names)} ${esc(s.last)}</b></td>
         <td>${esc(s.cedula)}<span class="subline">${esc(s.id)}</span></td>
@@ -391,7 +370,12 @@ function getJoinedReceipt(abono) {
   return { ...abono, total: ob.total || 0, balance: ob.balance || 0, monthlyType: ob.monthlyType || 'normal' };
 }
 
-// --- RECIBO Y PDF ---
+// Generar mensaje detallado para WhatsApp
+function getReceiptMessage(p) {
+  return `*CLUB LOS PUMAS* 🐆\n_Comprobante de Movimiento_\n\n*Recibo:* ${p.receipt}\n*Alumno:* ${p.studentName}\n*Concepto:* ${p.concept}\n*Fecha:* ${p.recordDate}\n\n*Total a pagar:* ${money(p.total)}\n*Abono:* 💵 ${money(p.amount)}\n*Saldo pendiente:* 🔴 ${money(p.balance)}${p.notes ? `\n*Nota:* ${p.notes}` : ''}`;
+}
+
+// --- RECIBO Y PDF (VERSIÓN ESTABLE ORIGINAL) ---
 function renderReceipt(p) {
   const box = $("receiptResult");
   if (!box) return;
@@ -452,37 +436,26 @@ function renderReceipt(p) {
     
     <div class="receipt-actions" style="margin-top: 20px;">
         <button class="secondary" id="downloadReceipt">📥 Descargar PDF</button>
-        <button class="primary btn-whatsapp-green" id="shareReceiptPdf">💬 Compartir PDF WhatsApp</button>
+        <button class="primary" id="shareReceiptPdf">📄 Compartir PDF WhatsApp</button>
+        <button class="secondary btn-whatsapp-green" id="sendWhatsappText">💬 Enviar Mensaje WhatsApp</button>
     </div>`;
 
-  $("downloadReceipt")?.addEventListener("click", () => handlePdfAction(p, 'download'));
-  $("shareReceiptPdf")?.addEventListener("click", () => handlePdfAction(p, 'share'));
+  $("downloadReceipt")?.addEventListener("click", () => downloadPdf(p));
+  $("shareReceiptPdf")?.addEventListener("click", () => shareReceiptPdf(p));
+  $("sendWhatsappText")?.addEventListener("click", () => sendWhatsappMessage(p));
   box.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-// Generador síncrono de PDF con el sello real (si ya precargó) o sello vectorial
-function generatePdfDocument(p) {
+function buildPdfDoc(p) {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ format: 'a5' });
 
   doc.setFillColor(33, 30, 30);
   doc.rect(0, 0, 148, 42, 'F');
 
-  if (cachedLogoBase64) {
-    try {
-      doc.setFillColor(255, 255, 255);
-      doc.circle(26, 20, 14.5, 'F');
-      doc.addImage(cachedLogoBase64, 'PNG', 12, 6, 28, 28);
-    } catch (e) {
-      drawFallbackSeal(doc);
-    }
-  } else {
-    drawFallbackSeal(doc);
-  }
-
   doc.setTextColor(255, 255, 255);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(13);
+  doc.setFontSize(14);
   doc.text("Club Deportivo Formativo Especializado", 46, 16);
   doc.text("Los Pumas", 46, 23);
 
@@ -542,54 +515,54 @@ function generatePdfDocument(p) {
   return doc;
 }
 
-function drawFallbackSeal(doc) {
-  doc.setFillColor(255, 255, 255);
-  doc.circle(26, 21, 14, 'F');
-  doc.setTextColor(199, 25, 45);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(14);
-  doc.text("LP", 20, 25);
+function downloadPdf(p) {
+  if (!window.jspdf) { notice("Requiere internet para el PDF.", true); return; }
+  const doc = buildPdfDoc(p);
+  const logo = new Image();
+  logo.src = './img/Pum.png';
+  logo.onload = function () {
+    doc.addImage(logo, 'PNG', 12, 6, 28, 28);
+    doc.save(`Recibo_${p.receipt}.pdf`);
+  };
+  logo.onerror = function () { doc.save(`Recibo_${p.receipt}.pdf`); };
 }
 
-// Manejador exclusivo de archivos PDF (Cero redirecciones a wa.me ni textos planos)
-async function handlePdfAction(p, actionType) {
-  if (!window.jspdf) { notice("Requiere internet para el PDF.", true); return; }
+async function shareReceiptPdf(p) {
+  const textMsg = getReceiptMessage(p);
 
-  try {
-    const doc = generatePdfDocument(p);
-    const fileName = `Recibo_${p.receipt}.pdf`;
-
-    if (actionType === 'download') {
-      doc.save(fileName);
-      notice("📥 ¡Recibo PDF descargado!");
-      return;
-    }
-
-    if (actionType === 'share') {
-      const pdfBlob = doc.output('blob');
-      const file = new File([pdfBlob], fileName, { type: 'application/pdf' });
-
-      // Enviamos ÚNICAMENTE el objeto files (sin text ni title) para obligar a WhatsApp a adjuntar el PDF
-      if (navigator.share) {
-        try {
-          await navigator.share({
-            files: [file]
-          });
-          return;
-        } catch (shareErr) {
-          if (shareErr.name === 'AbortError') return;
-          console.warn("No se pudo compartir archivo directamente:", shareErr);
-        }
-      }
-
-      // Si se abre en una PC de escritorio que no tiene menú nativo de compartir archivos:
-      doc.save(fileName);
-      notice("📥 Tu navegador no soporta envío directo. El PDF se descargó para que lo adjuntes.");
-    }
-  } catch (err) {
-    console.error("Error al procesar el PDF:", err);
-    notice("Ocurrió un error al generar el PDF.", true);
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    try {
+      await navigator.clipboard.writeText(textMsg.replace(/\\n/g, '\n'));
+      notice("📋 Resumen copiado. Abriendo WhatsApp con el PDF...");
+    } catch (e) {}
   }
+
+  if (navigator.share && window.jspdf) {
+    try {
+      const doc = buildPdfDoc(p);
+      const pdfBlob = doc.output('blob');
+      const file = new File([pdfBlob], `Recibo_${p.receipt}.pdf`, { type: 'application/pdf' });
+
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: `Recibo ${p.receipt} - Club Los Pumas`,
+          text: textMsg
+        });
+        return;
+      }
+    } catch (err) {
+      console.log("Web Share nativo falló:", err);
+    }
+  }
+
+  sendWhatsappMessage(p);
+}
+
+function sendWhatsappMessage(p) {
+  const textMsg = getReceiptMessage(p);
+  const waUrl = `https://wa.me/?text=${encodeURIComponent(textMsg.replace(/\\n/g, '\n'))}`;
+  window.open(waUrl, "_blank", "noopener");
 }
 
 // --- HISTORIAL CON BUSCADOR DE ALUMNO Y CONTEO TOTAL ---
@@ -674,7 +647,7 @@ function renderHistory() {
     <td>${money(p.balance)}</td>
     <td>
       <div style="display:flex; gap:6px;">
-        <button class="mini-btn red" data-receipt="${p.receipt}">Ver PDF físico</button>
+        <button class="mini-btn red" data-receipt="${p.receipt}">Ver PDF</button>
         <button class="mini-btn danger" onclick="deleteReceipt('${p.receipt}')">Eliminar</button>
       </div>
     </td>
