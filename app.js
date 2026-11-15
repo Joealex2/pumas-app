@@ -375,7 +375,7 @@ function getReceiptMessage(p) {
   return `*CLUB LOS PUMAS* 🐆\n_Comprobante de Movimiento_\n\n*Recibo:* ${p.receipt}\n*Alumno:* ${p.studentName}\n*Concepto:* ${p.concept}\n*Fecha:* ${p.recordDate}\n\n*Total a pagar:* ${money(p.total)}\n*Abono:* 💵 ${money(p.amount)}\n*Saldo pendiente:* 🔴 ${money(p.balance)}${p.notes ? `\n*Nota:* ${p.notes}` : ''}`;
 }
 
-// --- RECIBO Y PDF (VERSIÓN ESTABLE ORIGINAL) ---
+// --- RECIBO Y PDF (Solo 2 botones limpios) ---
 function renderReceipt(p) {
   const box = $("receiptResult");
   if (!box) return;
@@ -436,13 +436,11 @@ function renderReceipt(p) {
     
     <div class="receipt-actions" style="margin-top: 20px;">
         <button class="secondary" id="downloadReceipt">📥 Descargar PDF</button>
-        <button class="primary" id="shareReceiptPdf">📄 Compartir PDF WhatsApp</button>
-        <button class="secondary btn-whatsapp-green" id="sendWhatsappText">💬 Enviar Mensaje WhatsApp</button>
+        <button class="primary btn-whatsapp-green" id="shareReceiptPdf" style="background-color: #10b981;">💬 Compartir PDF WhatsApp</button>
     </div>`;
 
   $("downloadReceipt")?.addEventListener("click", () => downloadPdf(p));
   $("shareReceiptPdf")?.addEventListener("click", () => shareReceiptPdf(p));
-  $("sendWhatsappText")?.addEventListener("click", () => sendWhatsappMessage(p));
   box.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
@@ -528,29 +526,36 @@ function downloadPdf(p) {
 }
 
 async function shareReceiptPdf(p) {
-  // Preparamos el mensaje personalizado con el nombre del alumno
   const introText = `📄 *Recibo para:* ${p.studentName}\n\n`;
   const textMsg = introText + getReceiptMessage(p);
 
-  // 1. Copiamos el texto al portapapeles automáticamente
+  // Copia automática del texto detallado con el nombre del deportista al portapapeles
   if (navigator.clipboard && navigator.clipboard.writeText) {
     try {
       await navigator.clipboard.writeText(textMsg.replace(/\\n/g, '\n'));
+      notice("📋 ¡Texto copiado! Pégalo en el chat junto al PDF.");
     } catch (e) {}
   }
 
-  // 2. Intentamos compartir el archivo PDF físico de manera nativa
   if (navigator.share && window.jspdf) {
     try {
       const doc = buildPdfDoc(p);
+      const logo = new Image();
+      logo.src = './img/Pum.png';
+      
+      await new Promise((resolve) => {
+        logo.onload = () => { doc.addImage(logo, 'PNG', 12, 6, 28, 28); resolve(); };
+        logo.onerror = () => resolve();
+      });
+
       const pdfBlob = doc.output('blob');
       const file = new File([pdfBlob], `Recibo_${p.receipt}.pdf`, { type: 'application/pdf' });
 
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        notice("📋 ¡Texto copiado! Pégalo en el chat junto al PDF.");
         await navigator.share({
           files: [file],
-          title: `Recibo ${p.receipt} - Club Los Pumas`
+          title: `Recibo ${p.receipt} - Club Los Pumas`,
+          text: textMsg
         });
         return;
       }
@@ -559,11 +564,7 @@ async function shareReceiptPdf(p) {
     }
   }
 
-  sendWhatsappMessage(p);
-}
-
-function sendWhatsappMessage(p) {
-  const textMsg = getReceiptMessage(p);
+  downloadPdf(p);
   const waUrl = `https://wa.me/?text=${encodeURIComponent(textMsg.replace(/\\n/g, '\n'))}`;
   window.open(waUrl, "_blank", "noopener");
 }
