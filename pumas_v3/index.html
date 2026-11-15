@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Club Los Pumas | Gestión de pagos</title>
+  <link rel="stylesheet" href="./styles.css">
+  <link rel="manifest" href="./manifest.json">
+  <meta name="theme-color" content="#211e1e">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="app-header">
+      <div class="brand">
+        <img src="./img/Pum.png" alt="Logo">
+        <div>
+          <h1>LOS PUMAS</h1>
+          <p>Gestión de pagos</p>
+        </div>
+      </div>
+    </header>
+
+    <nav class="app-nav">
+      <button class="nav-item active" data-view="dashboard">Inicio</button>
+      <button class="nav-item" data-view="students">Alumnos</button>
+      <button class="nav-item" data-view="payment">Registrar movimiento</button>
+      <button class="nav-item" data-view="history">Historiales</button>
+      <button class="nav-item" data-view="tariffs">Tarifas</button>
+    </nav>
+
+    <main class="app-content">
+      <div id="notice" class="notice hidden"></div>
+
+      <!-- DASHBOARD VIEW -->
+      <section id="view-dashboard" class="view">
+        <h2>Inicio</h2>
+        <div class="stats-grid">
+          <div class="stat-card">
+            <h3>Alumnos Activos</h3>
+            <p id="statStudents">0</p>
+          </div>
+          <div class="stat-card">
+            <h3>Pagos Registrados</h3>
+            <p id="statPayments">0</p>
+          </div>
+          <div class="stat-card">
+            <h3>Recaudación Total</h3>
+            <p id="statRevenue">$0.00</p>
+          </div>
+        </div>
+        <div class="quick-actions" style="margin-top:20px;">
+          <button class="primary" data-go="payment">➕ Registrar Nuevo Pago</button>
+          <button class="secondary" data-go="students">👥 Ver Alumnos</button>
+        </div>
+      </section>
+
+      <!-- STUDENTS VIEW -->
+      <section id="view-students" class="view hidden">
+        <h2>Gestión de Alumnos</h2>
+        <div class="card" style="margin-bottom:20px;">
+          <h3 id="studentFormTitle">Registro de alumnos</h3>
+          <form id="studentForm">
+            <div class="form-grid">
+              <div class="form-group">
+                <label>ID Alumno</label>
+                <input type="text" id="studentId" readonly>
+              </div>
+              <div class="form-group">
+                <label>Cédula (10 dígitos) *</label>
+                <input type="text" id="studentCedula" required maxlength="10">
+              </div>
+              <div class="form-group">
+                <label>Nombres *</label>
+                <input type="text" id="studentNames" required>
+              </div>
+              <div class="form-group">
+                <label>Apellidos *</label>
+                <input type="text" id="studentLast" required>
+              </div>
+              <div class="form-group">
+                <label>Grupo</label>
+                <select id="studentGroup">
+                  <option value="Niños">Niños</option>
+                  <option value="Jóvenes">Jóvenes</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Estado</label>
+                <select id="studentStatus">
+                  <option value="Activo">Activo</option>
+                  <option value="Inactivo">Inactivo</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-actions" style="margin-top:15px; display:flex; gap:10px;">
+              <button type="submit" class="primary" id="studentSubmitBtn">Guardar alumno</button>
+              <button type="button" class="secondary hidden" id="studentCancelEditBtn">Cancelar</button>
+            </div>
+          </form>
+        </div>
+
+        <div class="card">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:15px;">
+            <h3>Listado de Deportistas</h3>
+            <div style="display:flex; gap:10px; flex-wrap:wrap;">
+              <button type="button" class="secondary" id="btnDownloadTemplate">📥 Descargar Plantilla CSV</button>
+              <label class="primary" style="cursor:pointer; display:inline-flex; align-items:center; padding:8px 14px; background:var(--red); color:#fff; border-radius:6px; font-weight:600; font-size:14px;">
+                📂 Importar CSV <input type="file" id="btnImportStudentsCSV" accept=".csv" style="display:none;">
+              </label>
+            </div>
+          </div>
+          <div style="display:flex; gap:10px; margin-bottom:15px; flex-wrap:wrap;">
+            <input type="text" id="studentSearch" placeholder="Buscar por cédula o nombre..." style="flex:1; min-width:200px;">
+            <select id="studentFilterStatus" style="width:150px;">
+              <option value="all">Todos los estados</option>
+              <option value="Activo">Activos</option>
+              <option value="Inactivo">Inactivos</option>
+            </select>
+          </div>
+          <div class="table-responsive" id="studentsList"></div>
+        </div>
+      </section>
+
+      <!-- PAYMENT VIEW -->
+      <section id="view-payment" class="view hidden">
+        <h2>Emitir Recibo y Cobro</h2>
+        <div class="card">
+          <form id="paymentForm">
+            <div class="form-group" style="position:relative; margin-bottom:15px;">
+              <label>Buscar alumno *</label>
+              <input type="hidden" id="payStudentId">
+              <input type="text" id="payStudentSearch" placeholder="Escribe cédula, nombre o apellido...">
+              <div id="payStudentResults" class="search-results hidden"></div>
+              <div id="payStudentSelected" class="hidden" style="background:#f3f4f6; padding:10px; border-radius:6px; display:flex; justify-content:space-between; align-items:center;">
+                <div><b>Seleccionado:</b> <span id="payStudentName"></span></div>
+                <button type="button" class="mini-btn danger" id="payStudentClear">Cambiar</button>
+              </div>
+            </div>
+
+            <div class="form-grid">
+              <div class="form-group">
+                <label>Concepto del recibo *</label>
+                <select id="payConcept">
+                  <option value="Mensualidad">Mensualidad</option>
+                  <option value="Mensualidad + Matrícula">Mensualidad + Matrícula</option>
+                  <option value="Implementos deportivos">Implementos deportivos</option>
+                  <option value="Uniformes">Uniformes</option>
+                  <option value="Otro">Otro</option>
+                </select>
+              </div>
+              <div class="form-group" id="monthlyTypeWrap">
+                <label>Tipo de mensualidad</label>
+                <select id="monthlyType">
+                  <option value="normal">Normal (hasta el 15)</option>
+                  <option value="late">Atrasado (desde el 16)</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Fecha de recibo *</label>
+                <input type="date" id="recordDate" required>
+              </div>
+              <div class="form-group">
+                <label>Valor total a cobrar ($) *</label>
+                <input type="number" step="0.01" id="payAmount" required>
+              </div>
+              <div class="form-group">
+                <label>Monto que paga hoy ($) *</label>
+                <input type="number" step="0.01" id="payAbono" required>
+              </div>
+            </div>
+
+            <div class="form-group" style="margin-top:15px;">
+              <label>Notas o descripción adicional</label>
+              <input type="text" id="payNotes" placeholder="Ej. Mes de Noviembre, uniforme talla M...">
+            </div>
+
+            <div style="margin:20px 0; background:#f9fafb; padding:15px; border-radius:8px; display:flex; justify-content:space-between; align-items:center;">
+              <span>Saldo pendiente resultante:</span>
+              <strong id="payBalance" style="color:var(--red); font-size:18px;">$0.00</strong>
+            </div>
+
+            <div style="display:flex; gap:10px;">
+              <button type="submit" class="primary">Registrar y generar recibo</button>
+              <button type="reset" class="secondary">Limpiar formulario</button>
+            </div>
+          </form>
+        </div>
+
+        <!-- RESULTADO DE RECIBO Y PDF -->
+        <div id="receiptResult" class="card hidden" style="margin-top:20px;"></div>
+      </section>
+
+      <!-- HISTORY VIEW -->
+      <section id="view-history" class="view hidden">
+        <h2>Historial de Recibos y Pagos</h2>
+        <div class="card" style="margin-bottom:20px;">
+          <div class="form-group" style="position:relative; margin-bottom:15px;">
+            <label>Filtrar por alumno específico</label>
+            <input type="hidden" id="historyStudentFilter" value="all">
+            <input type="text" id="historyStudentSearch" placeholder="Escribe nombre o cédula para filtrar...">
+            <div id="historyStudentResults" class="search-results hidden"></div>
+            <div id="historyStudentSelected" class="hidden" style="background:#f3f4f6; padding:8px 12px; border-radius:6px; display:flex; justify-content:space-between; align-items:center; margin-top:5px;">
+              <div>Filtro activo: <b id="historyStudentName"></b></div>
+              <button type="button" class="mini-btn danger" id="historyStudentClear">Quitar filtro</button>
+            </div>
+          </div>
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Mes</label>
+              <input type="month" id="historyMonth">
+            </div>
+            <div class="form-group">
+              <label>Concepto</label>
+              <select id="historyConcept">
+                <option value="all">Todos los conceptos</option>
+                <option value="Mensualidad">Mensualidad</option>
+                <option value="Mensualidad + Matrícula">Mensualidad + Matrícula</option>
+                <option value="Implementos deportivos">Implementos deportivos</option>
+                <option value="Uniformes">Uniformes</option>
+                <option value="Otro">Otro</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Estado de deuda</label>
+              <select id="historyStatus">
+                <option value="all">Todos</option>
+                <option value="paid">Pagados (Saldo $0)</option>
+                <option value="partial">Con abonos parciales</option>
+                <option value="pending">Sin pagos / pendientes</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="stats-grid" style="margin-top:20px;">
+            <div class="stat-card">
+              <h3>Recibos encontrados</h3>
+              <p id="historyCount">0</p>
+            </div>
+            <div class="stat-card">
+              <h3>Total Ingresos (Abonos)</h3>
+              <p id="historyRevenue">$0.00</p>
+            </div>
+            <div class="stat-card">
+              <h3>Saldos Pendientes</h3>
+              <p id="historyBalance" style="color:var(--red);">$0.00</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="table-responsive" id="historyList"></div>
+        </div>
+      </section>
+
+      <!-- TARIFFS VIEW -->
+      <section id="view-tariffs" class="view hidden">
+        <h2>Configuración de Tarifas y Respaldo</h2>
+        <div class="form-grid">
+          <div class="card">
+            <h3>Tarifas Oficiales ($)</h3>
+            <form id="tariffForm" style="margin-top:15px;">
+              <div class="form-group"><label>Mensualidad Normal</label><input type="number" step="0.01" id="tariffNormal" required></div>
+              <div class="form-group"><label>Mensualidad Atrasada</label><input type="number" step="0.01" id="tariffLate" required></div>
+              <div class="form-group"><label>Matrícula</label><input type="number" step="0.01" id="tariffMatricula" required></div>
+              <div class="form-group"><label>Implementos</label><input type="number" step="0.01" id="tariffImplements" required></div>
+              <div class="form-group"><label>Uniformes</label><input type="number" step="0.01" id="tariffUniform" required></div>
+              <div class="form-group"><label>Otro / General</label><input type="number" step="0.01" id="tariffOther" required></div>
+              <div style="margin-top:15px; display:flex; gap:10px;">
+                <button type="submit" class="primary">Guardar tarifas</button>
+                <button type="button" class="secondary" id="resetTariffs">Restablecer por defecto</button>
+              </div>
+            </form>
+          </div>
+
+          <div class="card">
+            <h3>Respaldo y Copias de Seguridad</h3>
+            <p class="muted" style="margin:10px 0 15px 0;">Exporta o importa todos los datos de alumnos, obligaciones y recibos en formato JSON.</p>
+            <div style="display:flex; flex-direction:column; gap:15px;">
+              <button type="button" class="primary" id="btnExportData">📥 Exportar Respaldo JSON</button>
+              <label class="secondary" style="cursor:pointer; text-align:center; padding:10px; border-radius:6px; font-weight:600; display:block;">
+                📂 Restaurar Respaldo JSON <input type="file" id="btnImportData" accept=".json" style="display:none;">
+              </label>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="./app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js')
+          .then(reg => console.log('ServiceWorker registrado:', reg.scope))
+          .catch(err => console.log('Error ServiceWorker:', err));
+      });
+    }
+  </script>
+</body>
+</html>

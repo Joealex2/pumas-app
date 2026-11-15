@@ -1,0 +1,15 @@
+{
+  "name": "Club Los Pumas - Gestión de Pagos",
+  "short_name": "Los Pumas",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#211e1e",
+  "theme_color": "#211e1e",
+  "icons": [
+    {
+      "src": "./img/Pum.png",
+      "sizes": "192x192 512x512",
+      "type": "image/png"
+    }
+  ]
+}
