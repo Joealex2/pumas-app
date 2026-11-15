@@ -528,16 +528,18 @@ function downloadPdf(p) {
 }
 
 async function shareReceiptPdf(p) {
-  // Aquí agregamos el encabezado personalizado con el nombre del deportista
+  // Preparamos el mensaje personalizado con el nombre del alumno
   const introText = `📄 *Recibo para:* ${p.studentName}\n\n`;
   const textMsg = introText + getReceiptMessage(p);
 
+  // 1. Copiamos el texto al portapapeles automáticamente
   if (navigator.clipboard && navigator.clipboard.writeText) {
     try {
       await navigator.clipboard.writeText(textMsg.replace(/\\n/g, '\n'));
     } catch (e) {}
   }
 
+  // 2. Intentamos compartir el archivo PDF físico de manera nativa
   if (navigator.share && window.jspdf) {
     try {
       const doc = buildPdfDoc(p);
@@ -545,10 +547,10 @@ async function shareReceiptPdf(p) {
       const file = new File([pdfBlob], `Recibo_${p.receipt}.pdf`, { type: 'application/pdf' });
 
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        notice("📋 ¡Texto copiado! Pégalo en el chat junto al PDF.");
         await navigator.share({
           files: [file],
-          title: `Recibo ${p.receipt} - Club Los Pumas`,
-          text: textMsg
+          title: `Recibo ${p.receipt} - Club Los Pumas`
         });
         return;
       }
