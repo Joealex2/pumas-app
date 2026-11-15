@@ -27,6 +27,26 @@ let data = {
   nextObligation: 1
 };
 
+// Precargar el sello del club en Base64 al abrir la app para usarlo de forma instantánea en el PDF
+let cachedLogoBase64 = null;
+function preloadClubLogo() {
+  const img = new Image();
+  img.crossOrigin = "Anonymous";
+  img.src = './img/Pum.png';
+  img.onload = function () {
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width || 200;
+      canvas.height = img.height || 200;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      cachedLogoBase64 = canvas.toDataURL('image/png');
+    } catch (e) {
+      console.warn("No se pudo convertir el logo a Base64:", e);
+    }
+  };
+}
+
 // Cargar datos desde Cloud Firestore
 async function loadData() {
   try {
@@ -85,8 +105,9 @@ function showView(name) {
   if (name === "tariffs") fillTariffs();
 }
 
-// Inicio automático cargando desde la nube
+// Inicio automático cargando desde la nube y precargando el sello
 window.addEventListener("DOMContentLoaded", async () => {
+  preloadClubLogo();
   await loadData();
   showView("dashboard");
   if ($("recordDate")) $("recordDate").value = today();
@@ -431,7 +452,7 @@ function renderReceipt(p) {
     
     <div class="receipt-actions" style="margin-top: 20px;">
         <button class="secondary" id="downloadReceipt">📥 Descargar PDF</button>
-        <button class="primary btn-whatsapp-green" id="shareReceiptPdf">💬 Compartir PDF WhatsApp</button>
+        <button class="primary btn-whatsapp-green" id="shareReceiptPdf">📄 Compartir PDF WhatsApp</button>
     </div>`;
 
   $("downloadReceipt")?.addEventListener("click", () => handlePdfAction(p, 'download'));
@@ -439,7 +460,7 @@ function renderReceipt(p) {
   box.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-// Generador de PDF con sello incorporado de forma segura
+// Generador síncrono de PDF con el sello real (si ya precargó) o sello vectorial
 function generatePdfDocument(p) {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ format: 'a5' });
@@ -447,14 +468,20 @@ function generatePdfDocument(p) {
   doc.setFillColor(33, 30, 30);
   doc.rect(0, 0, 148, 42, 'F');
 
-  doc.setFillColor(255, 255, 255);
-  doc.circle(26, 21, 14, 'F');
-  doc.setTextColor(199, 25, 45);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(14);
-  doc.text("LP", 20, 25);
+  if (cachedLogoBase64) {
+    try {
+      doc.setFillColor(255, 255, 255);
+      doc.circle(26, 20, 14.5, 'F');
+      doc.addImage(cachedLogoBase64, 'PNG', 12, 6, 28, 28);
+    } catch (e) {
+      drawFallbackSeal(doc);
+    }
+  } else {
+    drawFallbackSeal(doc);
+  }
 
   doc.setTextColor(255, 255, 255);
+  doc.setFont("helvetica", "bold");
   doc.setFontSize(13);
   doc.text("Club Deportivo Formativo Especializado", 46, 16);
   doc.text("Los Pumas", 46, 23);
@@ -515,44 +542,53 @@ function generatePdfDocument(p) {
   return doc;
 }
 
-// Manejador directo para compartir el archivo PDF físico (sin redirecciones a mensajes de texto)
+function drawFallbackSeal(doc) {
+  doc.setFillColor(255, 255, 255);
+  doc.circle(26, 21, 14, 'F');
+  doc.setTextColor(199, 25, 45);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(14);
+  doc.text("LP", 20, 25);
+}
+
+// Manejador exclusivo de archivos PDF (Cero redirecciones a wa.me ni textos planos)
 async function handlePdfAction(p, actionType) {
   if (!window.jspdf) { notice("Requiere internet para el PDF.", true); return; }
 
   try {
     const doc = generatePdfDocument(p);
+    const fileName = `Recibo_${p.receipt}.pdf`;
 
     if (actionType === 'download') {
-      doc.save(`Recibo_${p.receipt}.pdf`);
-      notice("📥 ¡Recibo descargado con éxito!");
+      doc.save(fileName);
+      notice("📥 ¡Recibo PDF descargado!");
       return;
     }
 
     if (actionType === 'share') {
       const pdfBlob = doc.output('blob');
-      const file = new File([pdfBlob], `Recibo_${p.receipt}.pdf`, { type: 'application/pdf' });
+      const file = new File([pdfBlob], fileName, { type: 'application/pdf' });
 
-      // Abrimos directamente el selector nativo del sistema operativo con el archivo PDF adjunto
+      // Enviamos ÚNICAMENTE el objeto files (sin text ni title) para obligar a WhatsApp a adjuntar el PDF
       if (navigator.share) {
         try {
           await navigator.share({
-            files: [file],
-            title: `Recibo ${p.receipt} - Club Los Pumas`
+            files: [file]
           });
           return;
         } catch (shareErr) {
-          if (shareErr.name === 'AbortError') return; // El usuario cerró el menú
-          console.warn("Error en navigator.share con archivo:", shareErr);
+          if (shareErr.name === 'AbortError') return;
+          console.warn("No se pudo compartir archivo directamente:", shareErr);
         }
       }
 
-      // Alternativa por si se abre desde una computadora de escritorio que no permite compartir archivos
-      doc.save(`Recibo_${p.receipt}.pdf`);
-      notice("📥 PDF descargado. Adjúntalo manualmente en WhatsApp.");
+      // Si se abre en una PC de escritorio que no tiene menú nativo de compartir archivos:
+      doc.save(fileName);
+      notice("📥 Tu navegador no soporta envío directo. El PDF se descargó para que lo adjuntes.");
     }
   } catch (err) {
     console.error("Error al procesar el PDF:", err);
-    notice("Ocurrió un error al procesar el PDF.", true);
+    notice("Ocurrió un error al generar el PDF.", true);
   }
 }
 
