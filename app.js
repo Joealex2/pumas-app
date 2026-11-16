@@ -132,13 +132,16 @@ function monthBaseTarget(studentId, monthKey) {
   return obls.reduce((mx, o) => Math.max(mx, Number(o.total) || 0), 0);
 }
 
-// Monto objetivo de un mes: el cobro ya fijado, o la tarifa (con recargo si vencido)
+// Monto objetivo de un mes: el cobro ya fijado, o la tarifa (con recargo si vencido).
+// Si el alumno ya cubrió la tarifa normal, no se le aplica recargo retroactivo.
 function monthTargetFor(studentId, monthKey, waive = false) {
   const fixed = monthBaseTarget(studentId, monthKey);
   if (fixed != null) return fixed;
+  const normal = Number(data.tariffs.normal) || 0;
+  if (monthPaidFor(studentId, monthKey) >= normal) return normal;
   return (monthIsLate(monthKey) && !waive)
     ? (Number(data.tariffs.late) || 0)
-    : (Number(data.tariffs.normal) || 0);
+    : normal;
 }
 
 // Total abonado por el alumno a un mes concreto (permite pagos parciales)
