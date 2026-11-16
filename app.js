@@ -27,6 +27,9 @@ let data = {
   nextObligation: 1
 };
 
+// Permite recobrar un mes ya cancelado después de aceptar la advertencia
+let forcePaidMonthly = false;
+
 // Cargar datos desde Cloud Firestore
 async function loadData() {
   try {
@@ -67,11 +70,22 @@ function money(n) { return new Intl.NumberFormat("en-US", { style: "currency", c
 function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
 function today() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }
 
-// La mensualidad no tiene recargo si se paga hasta el día 15
+// La mensualidad no tiene recargo si se paga hasta el día 15.
+// Si el 15 cae sábado o domingo, el plazo se extiende al lunes siguiente.
+function monthlyDueDate(dateStr) {
+  const d = dateStr || today();
+  const [y, m] = String(d).slice(0, 7).split("-").map(Number);
+  const due = new Date(y, m - 1, 15);
+  const dow = due.getDay(); // 0 = domingo, 6 = sábado
+  if (dow === 6) due.setDate(17);      // sábado 15 -> lunes 17
+  else if (dow === 0) due.setDate(16); // domingo 15 -> lunes 16
+  return due;
+}
+
 function isPastDue(dateStr) {
   const d = dateStr || today();
-  const day = Number(String(d).slice(8, 10));
-  return day > 15;
+  const [y, m, day] = String(d).slice(0, 10).split("-").map(Number);
+  return new Date(y, m - 1, day) > monthlyDueDate(d);
 }
 
 // Nombre del mes a partir de una clave "YYYY-MM"
@@ -114,7 +128,7 @@ function monthsRange(fromKey, toKey) {
   return out;
 }
 
-// ¿El mes está vencido? (meses pasados = sí; mes actual = después del día 15)
+// ¿El mes está vencido? (meses pasados = sí; mes actual = después del plazo de pago)
 function monthIsLate(key) {
   const cm = currentMonthKey();
   if (key < cm) return true;
@@ -198,7 +212,7 @@ function notice(msg, error = false) {
 }
 
 // Ventana de advertencia reutilizable. Devuelve una promesa con true/false.
-function confirmDialog({ title = "Confirmar", message = "", confirmText = "Aceptar", danger = true, icon = "⚠️" } = {}) {
+function confirmDialog({ title = "Confirmar", message = "", confirmText = "Aceptar", cancelText = "Cancelar", danger = true, icon = "⚠️" } = {}) {
   return new Promise(resolve => {
     const modal = $("confirmModal");
     if (!modal) { resolve(window.confirm(message)); return; }
@@ -209,6 +223,7 @@ function confirmDialog({ title = "Confirmar", message = "", confirmText = "Acept
     if ($("confirmMessage")) $("confirmMessage").textContent = message;
     if ($("confirmIcon")) $("confirmIcon").textContent = icon;
     if (ok) { ok.textContent = confirmText; ok.className = danger ? "danger" : "primary"; }
+    if (cancel) cancel.textContent = cancelText;
     modal.classList.remove("hidden");
     setTimeout(() => cancel && cancel.focus(), 0);
 
@@ -244,11 +259,10 @@ function showView(name) {
   if (name === "tariffs") fillTariffs();
 }
 
-// Inicio automático cargando desde la nube
 window.addEventListener("DOMContentLoaded", async () => {
+  if (recordDate) recordDate.value = today();
   await loadData();
   showView("dashboard");
-  if ($("recordDate")) $("recordDate").value = today();
 });
 
 // Al volver a la app (o cambiar el día/mes) refrescar el panel del mes actual
@@ -490,6 +504,7 @@ $("payStudentSearch")?.addEventListener("input", (e) => {
 });
 
 $("payStudentClear")?.addEventListener("click", () => {
+  forcePaidMonthly = false;
   if ($("payStudentId")) $("payStudentId").value = "";
   if ($("payStudentSearch")) $("payStudentSearch").value = "";
   $("payStudentSearch")?.classList.remove("hidden");
@@ -504,7 +519,34 @@ function selectStudentForPayment(studentId) {
   $("payStudentSearch")?.classList.add("hidden"); $("payStudentResults")?.classList.add("hidden");
   $("payStudentSelected")?.classList.remove("hidden");
   if ($("payStudentName")) $("payStudentName").textContent = `${s.names} ${s.last}`;
-  resetPaymentFormToNew();
+  warnIfMonthlyPaid();
+}
+
+// Advierte si la mensualidad del mes actual ya está cancelada.
+// Si se acepta, se habilita el recobro de ese mes como comprobante adicional.
+async function warnIfMonthlyPaid() {
+  forcePaidMonthly = false;
+  const s = selectedStudent();
+  const concept = $("payConcept")?.value || "";
+  if (!s || !/mensualidad/i.test(concept)) { updateSuggestedAmount(); return; }
+
+  updateSuggestedAmount();
+  const cm = currentMonthKey();
+  const since = s.since || cm;
+  // Solo advertir cuando no hay meses pendientes: si debe meses anteriores,
+  // el cobro es legítimo y no se agrega el mes actual para evitar dobles cobros.
+  if (cm < since || studentDebt(s).months.length > 0 || !hasPaidMonthly(s.id, cm)) return;
+
+  const ok = await confirmDialog({
+    title: "Mensualidad ya cancelada",
+    message: `${s.names} ${s.last} ya tiene cancelada la mensualidad de ${monthLabel(cm)}. ¿Deseas emitir un comprobante adicional para ese mes?`,
+    confirmText: "Aceptar",
+    cancelText: "Omitir",
+    danger: false,
+    icon: "⚠️"
+  });
+  forcePaidMonthly = ok;
+  updateSuggestedAmount();
 }
 
 function resetPaymentFormToNew() {
@@ -557,11 +599,18 @@ function renderPendingMonths() {
       : `<span class="muted">Sin deuda pendiente 🎉</span>`;
   }
 
-  // Recargo: se puede aplicar o quitar cuando ya pasó el día 15 (según la fecha del recibo)
+  // Si se aceptó la advertencia, se agrega el mes actual aunque ya esté cancelado
+  const cm = currentMonthKey();
+  let months = debt.months;
+  if (forcePaidMonthly && isMonthly && hasPaidMonthly(s.id, cm) && !months.some(m => m.month === cm)) {
+    months = [...months, { month: cm, label: monthLabel(cm), amount: 0, paid: monthPaidFor(s.id, cm), late: false }];
+  }
+
+  // Recargo: se puede aplicar o quitar cuando ya venció el plazo (según la fecha del recibo)
   const refDate = $("recordDate")?.value || today();
   const refMonth = String(refDate).slice(0, 7);
   const lateRow = $("lateFeeRow");
-  const refMonthPendingLate = isMonthly && isPastDue(refDate) && debt.months.some(m => m.month === refMonth);
+  const refMonthPendingLate = isMonthly && isPastDue(refDate) && months.some(m => m.month === refMonth);
   if (lateRow) {
     const wasHidden = lateRow.classList.contains("hidden");
     lateRow.classList.toggle("hidden", !refMonthPendingLate);
@@ -570,17 +619,15 @@ function renderPendingMonths() {
     if ($("lateFeeLabel")) $("lateFeeLabel").textContent = `Aplicar recargo por atraso (+${money(diff)})`;
   }
 
-  if (!debt.months.length) {
+  if (!months.length) {
     list.innerHTML = `<div class="muted" style="font-size:13px;">No hay mensualidades pendientes.</div>`;
   } else {
-    const cm = currentMonthKey();
-    list.innerHTML = debt.months.map(m => {
+    list.innerHTML = months.map(m => {
       const ch = monthChargeForForm(m.month);
       return `
       <label class="month-item${ch.late ? " late" : ""}">
         <input type="checkbox" class="month-check" value="${m.month}" data-amount="${ch.amount}" ${m.month === cm ? "checked" : ""}>
         <span class="month-name">${esc(m.label)}</span>
-        <span class="month-amt">${money(ch.amount)}${ch.late ? " · recargo" : ""}</span>
       </label>`;
     }).join("");
     list.querySelectorAll(".month-check").forEach(cb => cb.addEventListener("change", recomputeMonthlyAmount));
@@ -604,7 +651,8 @@ function monthChargeForForm(monthKey) {
   else if (monthKey === refMonth) late = isPastDue(refDate) && !waive;
   else late = false;
   const target = fixedTarget != null ? fixedTarget : (Number(late ? data.tariffs.late : data.tariffs.normal) || 0);
-  const amount = Math.max(0, target - monthPaidFor(s.id, monthKey));
+  let amount = Math.max(0, target - monthPaidFor(s.id, monthKey));
+  if (forcePaidMonthly && amount <= 0) amount = target;
   return { amount, late: late && fixedTarget == null };
 }
 
@@ -624,18 +672,14 @@ function updateSuggestedAmount() {
   if (isMonthly) recomputeMonthlyAmount(); else recomputeAmount();
 }
 
-$("payConcept")?.addEventListener("change", updateSuggestedAmount);
+$("payConcept")?.addEventListener("change", () => warnIfMonthlyPaid());
 $("recordDate")?.addEventListener("change", updateSuggestedAmount);
 $("lateFeeToggle")?.addEventListener("change", () => {
   document.querySelectorAll("#pendingMonthsList .month-check").forEach(cb => {
     const ch = monthChargeForForm(cb.value);
     cb.dataset.amount = ch.amount;
     const item = cb.closest(".month-item");
-    if (item) {
-      item.classList.toggle("late", ch.late);
-      const amtEl = item.querySelector(".month-amt");
-      if (amtEl) amtEl.textContent = money(ch.amount) + (ch.late ? " · recargo" : "");
-    }
+    if (item) item.classList.toggle("late", ch.late);
   });
   recomputeMonthlyAmount();
 });
@@ -649,6 +693,7 @@ function updateBalance() {
 }
 
 $("paymentForm")?.addEventListener("reset", () => setTimeout(() => {
+  forcePaidMonthly = false;
   if ($("recordDate")) $("recordDate").value = today();
   if ($("payStudentId")) $("payStudentId").value = "";
   if ($("payStudentSearch")) $("payStudentSearch").value = "";
@@ -738,11 +783,6 @@ $("paymentForm")?.addEventListener("submit", async e => {
 function getJoinedReceipt(abono) {
   const ob = data.obligations.find(o => o.id === abono.obligationId) || {};
   return { ...abono, total: ob.total || 0, balance: ob.balance || 0, monthlyType: ob.monthlyType || 'normal' };
-}
-
-// Generar mensaje detallado para WhatsApp
-function getReceiptMessage(p) {
-  return `*CLUB LOS PUMAS* \n_Comprobante de Movimiento_\n\n*Recibo:* ${p.receipt}\n*Alumno:* ${p.studentName}\n*Concepto:* ${p.concept}${p.coveredMonth ? `\n*Cubre:* ${monthLabel(p.coveredMonth)}` : ""}\n*Fecha:* ${p.recordDate}\n\n*Total a pagar:* ${money(p.total)}\n*Abono:*  ${money(p.amount)}\n*Saldo pendiente:*  ${money(p.balance)}${p.notes ? `\n*Nota:* ${p.notes}` : ''}`;
 }
 
 // --- RECIBO Y PDF ---
@@ -988,7 +1028,6 @@ async function shareReceiptPdf(p) {
 
 async function executeNativeShare(doc, p) {
   const fileName = `Recibo_${p.receipt}.pdf`;
-  const title = `Recibo ${p.receipt} - Club Los Pumas`;
 
   let file;
   try {
@@ -999,17 +1038,11 @@ async function executeNativeShare(doc, p) {
     return;
   }
 
-  // Compartir el PDF CON un mensaje predefinido (WhatsApp lo usa como pie de mensaje)
-  const withMessage = { files: [file], text: getReceiptMessage(p), title };
-  const fileOnly = { files: [file], title };
+  // Compartir solo el archivo PDF, sin mensaje predefinido
+  const fileOnly = { files: [file] };
 
   if (navigator.share && navigator.canShare) {
     try {
-      if (navigator.canShare(withMessage)) {
-        await navigator.share(withMessage);
-        return;
-      }
-      // Si el navegador no admite texto junto al archivo, comparte solo el PDF
       if (navigator.canShare(fileOnly)) {
         await navigator.share(fileOnly);
         return;
@@ -1025,12 +1058,6 @@ async function executeNativeShare(doc, p) {
   // Si el navegador del celular no soporta compartir archivos, se descarga como respaldo
   doc.save(fileName);
   notice("📥 PDF descargado en tu dispositivo.");
-}
-
-// Abre WhatsApp con el mensaje del comprobante (útil cuando el equipo no adjunta texto al PDF)
-function shareReceiptWhatsAppText(p) {
-  const url = "https://wa.me/?text=" + encodeURIComponent(getReceiptMessage(p));
-  window.open(url, "_blank");
 }
 
 function downloadBlob(blob, fileName) {
@@ -1152,8 +1179,7 @@ function drawReceiptCanvas(p, logoImg) {
   return canvas;
 }
 
-// Comparte el recibo como IMAGEN (PNG) junto al mensaje. A diferencia del PDF,
-// WhatsApp sí incluye el texto como pie de foto en las imágenes.
+// Comparte el recibo como IMAGEN (PNG) sin mensaje predefinido.
 async function shareReceiptImage(p) {
   notice("Generando imagen del recibo...");
 
@@ -1172,8 +1198,6 @@ async function shareReceiptImage(p) {
   if (!blob) { notice("No se pudo generar la imagen.", true); return; }
 
   const fileName = `Recibo_${p.receipt}.png`;
-  const title = `Recibo ${p.receipt} - Club Los Pumas`;
-  const message = getReceiptMessage(p);
 
   let file;
   try {
@@ -1184,12 +1208,10 @@ async function shareReceiptImage(p) {
     return;
   }
 
-  const withMessage = { files: [file], text: message, title };
-  const fileOnly = { files: [file], title };
+  const fileOnly = { files: [file] };
 
   if (navigator.share && navigator.canShare) {
     try {
-      if (navigator.canShare(withMessage)) { await navigator.share(withMessage); return; }
       if (navigator.canShare(fileOnly)) { await navigator.share(fileOnly); return; }
     } catch (err) {
       if (err.name === "AbortError") return;
@@ -1441,9 +1463,13 @@ function renderDashboard() {
   if (monthlyProgress) monthlyProgress.style.width = enrolled.length ? `${Math.round((paid.length / enrolled.length) * 100)}%` : "0%";
   const monthlyHint = $("dashMonthlyHint");
   if (monthlyHint) {
-    if (monthKey === currentMonth) monthlyHint.textContent = late
-      ? `Después del día 15 aplica recargo: ${money(rate)} por alumno.`
-      : `Sin recargo hasta el 15. Tarifa normal: ${money(rate)}.`;
+    if (monthKey === currentMonth) {
+      const due = monthlyDueDate(today());
+      const dueLabel = due.toLocaleDateString("es-EC", { day: "numeric", month: "long" });
+      monthlyHint.textContent = late
+        ? `Recargo aplicado: ${money(rate)} por alumno (plazo venció el ${dueLabel}).`
+        : `Sin recargo hasta el ${dueLabel}. Tarifa normal: ${money(rate)}.`;
+    }
     else if (monthKey > currentMonth) monthlyHint.textContent = `Mes futuro · tarifa: ${money(rate)} por alumno.`;
     else monthlyHint.textContent = `Mes cerrado · recargo aplicado: ${money(rate)} por alumno.`;
   }

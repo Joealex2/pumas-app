@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pumas-auto-update-v19';
+const CACHE_NAME = 'pumas-auto-update-v21';
 
 self.addEventListener('install', event => {
   self.skipWaiting();
