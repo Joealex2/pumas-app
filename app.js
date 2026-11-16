@@ -1473,42 +1473,21 @@ function renderDashboard() {
 // Mes seleccionado en el panel de mensualidades (null = mes actual)
 let dashMonthKey = null;
 $("dashMonthlySearch")?.addEventListener("input", renderDashboard);
-$("dashMonthToday")?.addEventListener("click", () => { dashMonthKey = null; renderDashboard(); });
 
-// Deslizar (swipe) para cambiar de mes en el panel de mensualidades
 function shiftDashMonth(dir) {
   dashMonthKey = monthAdd(dashMonthKey || currentMonthKey(), dir);
   renderDashboard();
   const panel = $("dashMonthlyPanel");
   if (panel) { panel.classList.remove("month-fade"); void panel.offsetWidth; panel.classList.add("month-fade"); }
 }
-(function initMonthSwipe() {
+$("dashMonthPrev")?.addEventListener("click", () => shiftDashMonth(-1));
+$("dashMonthNext")?.addEventListener("click", () => shiftDashMonth(1));
+$("dashMonthToday")?.addEventListener("click", () => {
+  dashMonthKey = null;
+  renderDashboard();
   const panel = $("dashMonthlyPanel");
-  if (!panel) return;
-  let startX = 0, startY = 0, tracking = false, swiping = false;
-  panel.addEventListener("touchstart", e => {
-    if (e.touches.length !== 1) { tracking = false; return; }
-    startX = e.touches[0].clientX;
-    startY = e.touches[0].clientY;
-    tracking = true; swiping = false;
-  }, { passive: true });
-  panel.addEventListener("touchmove", e => {
-    if (!tracking) return;
-    const dx = e.touches[0].clientX - startX;
-    const dy = e.touches[0].clientY - startY;
-    if (!swiping && Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy) * 1.2) swiping = true;
-    if (swiping && e.cancelable) e.preventDefault();
-  }, { passive: false });
-  panel.addEventListener("touchend", e => {
-    if (!tracking) return;
-    tracking = false;
-    const t = e.changedTouches[0];
-    const dx = t.clientX - startX;
-    const dy = t.clientY - startY;
-    if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.2) shiftDashMonth(dx < 0 ? 1 : -1);
-    swiping = false;
-  }, { passive: true });
-})();
+  if (panel) { panel.classList.remove("month-fade"); void panel.offsetWidth; panel.classList.add("month-fade"); }
+});
 
 function renderAll() {
   renderDashboard();

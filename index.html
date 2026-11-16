@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Club Los Pumas | Gestión de pagos</title>
-  <link rel="stylesheet" href="./styles.css?v=18">
+  <link rel="stylesheet" href="./styles.css?v=19">
   <link rel="manifest" href="./manifest.json">
   <meta name="theme-color" content="#211e1e">
 </head>
@@ -98,10 +98,11 @@
               <span class="badge" id="dashMonthlyBadge" style="background:var(--red-soft);color:var(--red);">0/0</span>
             </div>
             <div class="month-nav">
+              <button type="button" class="month-nav-btn" id="dashMonthPrev" aria-label="Mes anterior">‹</button>
               <span class="month-nav-label" id="dashMonthLabel">—</span>
+              <button type="button" class="month-nav-btn" id="dashMonthNext" aria-label="Mes siguiente">›</button>
               <button type="button" class="month-nav-today" id="dashMonthToday">Hoy</button>
             </div>
-            <p class="month-nav-hint">← Desliza para cambiar de mes →</p>
             <div class="progress-track"><div class="progress-fill" id="dashMonthlyProgress" style="width:0%"></div></div>
             <p class="subline" id="dashMonthlyHint" style="margin:8px 0 6px;"></p>
             <input type="text" id="dashMonthlySearch" placeholder="🔎 Buscar alumno a cobrar (nombre o cédula)..." style="margin-bottom:10px;">
@@ -370,7 +371,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="./app.js?v=18"></script>
+  <script src="./app.js?v=19"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
