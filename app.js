@@ -83,6 +83,9 @@ function monthLabel(monthKey) {
 
 // ¿El alumno ya cubrió (totalmente) la mensualidad del mes indicado?
 function hasPaidMonthly(studentId, monthKey) {
+  const s = data.students.find(x => x.id === studentId);
+  const since = (s && s.since) || currentMonthKey();
+  if (monthKey < since) return true; // aún no estaba inscrito ese mes
   return monthOutstanding(studentId, monthKey, false) <= 0;
 }
 
@@ -1389,12 +1392,14 @@ function renderDashboard() {
   if ($("statPayments")) $("statPayments").textContent = data.abonos.length;
   if ($("statRevenue")) $("statRevenue").textContent = money(data.abonos.reduce((s, a) => s + a.amount, 0));
 
-  // Mensualidades del mes en curso
-  const monthKey = today().slice(0, 7);
+  // Mensualidades del mes seleccionado (por defecto, el mes en curso)
+  const currentMonth = currentMonthKey();
+  const monthKey = dashMonthKey || currentMonth;
   const active = data.students.filter(s => s.status !== "Inactivo");
-  const paid = active.filter(s => hasPaidMonthly(s.id, monthKey));
-  const debtors = active.filter(s => !hasPaidMonthly(s.id, monthKey));
-  const late = isPastDue(today());
+  const enrolled = active.filter(s => (s.since || currentMonth) <= monthKey);
+  const paid = enrolled.filter(s => hasPaidMonthly(s.id, monthKey));
+  const debtors = enrolled.filter(s => !hasPaidMonthly(s.id, monthKey));
+  const late = monthIsLate(monthKey);
   const rate = Number(late ? data.tariffs.late : data.tariffs.normal) || 0;
   const totalDebt = active.reduce((sum, s) => sum + studentDebt(s).total, 0);
 
@@ -1428,15 +1433,20 @@ function renderDashboard() {
 
   // Panel de mensualidades del mes
   const monthlyBadge = $("dashMonthlyBadge");
-  if (monthlyBadge) monthlyBadge.textContent = `${paid.length}/${active.length} pagaron`;
+  if (monthlyBadge) monthlyBadge.textContent = `${paid.length}/${enrolled.length} pagaron`;
   const monthlyTitle = $("dashMonthlyTitle");
-  if (monthlyTitle) monthlyTitle.textContent = `Mensualidades · ${monthLabel(monthKey)}`;
+  if (monthlyTitle) monthlyTitle.textContent = "Mensualidades";
+  if ($("dashMonthLabel")) $("dashMonthLabel").textContent = monthLabel(monthKey);
   const monthlyProgress = $("dashMonthlyProgress");
-  if (monthlyProgress) monthlyProgress.style.width = active.length ? `${Math.round((paid.length / active.length) * 100)}%` : "0%";
+  if (monthlyProgress) monthlyProgress.style.width = enrolled.length ? `${Math.round((paid.length / enrolled.length) * 100)}%` : "0%";
   const monthlyHint = $("dashMonthlyHint");
-  if (monthlyHint) monthlyHint.textContent = late
-    ? `Después del día 15 aplica recargo: ${money(rate)} por alumno.`
-    : `Sin recargo hasta el 15. Tarifa normal: ${money(rate)}.`;
+  if (monthlyHint) {
+    if (monthKey === currentMonth) monthlyHint.textContent = late
+      ? `Después del día 15 aplica recargo: ${money(rate)} por alumno.`
+      : `Sin recargo hasta el 15. Tarifa normal: ${money(rate)}.`;
+    else if (monthKey > currentMonth) monthlyHint.textContent = `Mes futuro · tarifa: ${money(rate)} por alumno.`;
+    else monthlyHint.textContent = `Mes cerrado · recargo aplicado: ${money(rate)} por alumno.`;
+  }
 
   const monthList = $("dashMonthlyList");
   if (monthList) {
@@ -1455,12 +1465,50 @@ function renderDashboard() {
           <button class="mini-btn red" data-pay-for="${s.id}">Cobrar</button>
         </div>
       </div>`;
-    }).join("") : `<div class="empty-state">${q ? "Sin resultados para \"" + esc(q) + "\"." : "¡Todos al día este mes! 🎉"}</div>`;
+    }).join("") : `<div class="empty-state">${q ? "Sin resultados para \"" + esc(q) + "\"." : (enrolled.length === 0 ? "Sin alumnos inscritos en este mes." : `¡Todos al día${monthKey === currentMonth ? " este mes" : " en " + monthLabel(monthKey)}! 🎉`)}</div>`;
     monthList.querySelectorAll("[data-pay-for]").forEach(b => b.addEventListener("click", () => { showView("payment"); selectStudentForPayment(b.dataset.payFor); }));
   }
 }
 
+// Mes seleccionado en el panel de mensualidades (null = mes actual)
+let dashMonthKey = null;
 $("dashMonthlySearch")?.addEventListener("input", renderDashboard);
+$("dashMonthToday")?.addEventListener("click", () => { dashMonthKey = null; renderDashboard(); });
+
+// Deslizar (swipe) para cambiar de mes en el panel de mensualidades
+function shiftDashMonth(dir) {
+  dashMonthKey = monthAdd(dashMonthKey || currentMonthKey(), dir);
+  renderDashboard();
+  const panel = $("dashMonthlyPanel");
+  if (panel) { panel.classList.remove("month-fade"); void panel.offsetWidth; panel.classList.add("month-fade"); }
+}
+(function initMonthSwipe() {
+  const panel = $("dashMonthlyPanel");
+  if (!panel) return;
+  let startX = 0, startY = 0, tracking = false, swiping = false;
+  panel.addEventListener("touchstart", e => {
+    if (e.touches.length !== 1) { tracking = false; return; }
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+    tracking = true; swiping = false;
+  }, { passive: true });
+  panel.addEventListener("touchmove", e => {
+    if (!tracking) return;
+    const dx = e.touches[0].clientX - startX;
+    const dy = e.touches[0].clientY - startY;
+    if (!swiping && Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy) * 1.2) swiping = true;
+    if (swiping && e.cancelable) e.preventDefault();
+  }, { passive: false });
+  panel.addEventListener("touchend", e => {
+    if (!tracking) return;
+    tracking = false;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - startX;
+    const dy = t.clientY - startY;
+    if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.2) shiftDashMonth(dx < 0 ? 1 : -1);
+    swiping = false;
+  }, { passive: true });
+})();
 
 function renderAll() {
   renderDashboard();
