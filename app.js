@@ -83,7 +83,7 @@ function monthLabel(monthKey) {
 
 // ¿El alumno ya cubrió (totalmente) la mensualidad del mes indicado?
 function hasPaidMonthly(studentId, monthKey) {
-  return monthPaidFor(studentId, monthKey) >= (Number(data.tariffs.normal) || 0);
+  return monthOutstanding(studentId, monthKey, false) <= 0;
 }
 
 // --- MENSUALIDADES / DEUDA ---
@@ -123,6 +123,24 @@ function monthAmount(key) {
   return Number(monthIsLate(key) ? data.tariffs.late : data.tariffs.normal) || 0;
 }
 
+// Monto fijado para un mes cuando ya se registró un cobro (el mayor total de sus comprobantes).
+// Devuelve null si el mes aún no tiene ningún cobro registrado.
+function monthBaseTarget(studentId, monthKey) {
+  const obls = (data.obligations || []).filter(o =>
+    o.studentId === studentId && isMensualidad(o) && o.coveredMonth === monthKey);
+  if (!obls.length) return null;
+  return obls.reduce((mx, o) => Math.max(mx, Number(o.total) || 0), 0);
+}
+
+// Monto objetivo de un mes: el cobro ya fijado, o la tarifa (con recargo si vencido)
+function monthTargetFor(studentId, monthKey, waive = false) {
+  const fixed = monthBaseTarget(studentId, monthKey);
+  if (fixed != null) return fixed;
+  return (monthIsLate(monthKey) && !waive)
+    ? (Number(data.tariffs.late) || 0)
+    : (Number(data.tariffs.normal) || 0);
+}
+
 // Total abonado por el alumno a un mes concreto (permite pagos parciales)
 function monthPaidFor(studentId, monthKey) {
   return (data.abonos || [])
@@ -130,19 +148,24 @@ function monthPaidFor(studentId, monthKey) {
     .reduce((s, a) => s + (Number(a.amount) || 0), 0);
 }
 
+// Saldo pendiente de un mes (0 = saldado). `waive` quita el recargo si el mes aún no tiene cobro fijado.
+function monthOutstanding(studentId, monthKey, waive = false) {
+  const target = monthTargetFor(studentId, monthKey, waive);
+  const paid = monthPaidFor(studentId, monthKey);
+  return Math.max(0, target - paid);
+}
+
 // Meses que el alumno aún debe (saldo restante por mes)
 function pendingMonthsFor(student) {
   if (!student) return [];
   const since = student.since || currentMonthKey();
   const cm = currentMonthKey();
-  const base = Number(data.tariffs.normal) || 0;
   const out = [];
   monthsRange(since, cm).forEach(k => {
-    const paid = monthPaidFor(student.id, k);
-    if (paid >= base) return; // mes saldado
-    const target = monthAmount(k); // incluye recargo si está vencido
-    const amount = Math.max(0, target - paid);
-    if (amount > 0) out.push({ month: k, label: monthLabel(k), amount, paid, late: monthIsLate(k) });
+    const amount = monthOutstanding(student.id, k, false);
+    if (amount <= 0) return; // mes saldado
+    const fixed = monthBaseTarget(student.id, k) != null;
+    out.push({ month: k, label: monthLabel(k), amount, paid: monthPaidFor(student.id, k), late: !fixed && monthIsLate(k) });
   });
   return out;
 }
@@ -557,8 +580,8 @@ function renderPendingMonths() {
     list.querySelectorAll(".month-check").forEach(cb => cb.addEventListener("change", recomputeMonthlyAmount));
   }
 
-  // "Valor total" es calculado (solo lectura); "Monto que paga hoy" es editable para pagos parciales
-  if ($("payAmount")) $("payAmount").readOnly = isMonthly;
+  // "Valor total a cobrar" y "Monto que paga hoy" son editables (permite cobros personalizados y pagos parciales)
+  if ($("payAmount")) $("payAmount").readOnly = false;
   if ($("payAbono")) $("payAbono").readOnly = false;
 }
 
@@ -568,15 +591,15 @@ function monthChargeForForm(monthKey) {
   const refMonth = String(refDate).slice(0, 7);
   const waive = $("lateFeeToggle") && !$("lateFeeToggle").checked;
   const s = selectedStudent();
-  const paid = s ? monthPaidFor(s.id, monthKey) : 0;
-  const base = Number(data.tariffs.normal) || 0;
-  if (paid >= base) return { amount: 0, late: false };
+  if (!s) return { amount: 0, late: false };
+  const fixedTarget = monthBaseTarget(s.id, monthKey);
   let late;
   if (monthKey < refMonth) late = true;
   else if (monthKey === refMonth) late = isPastDue(refDate) && !waive;
   else late = false;
-  const target = Number(late ? data.tariffs.late : data.tariffs.normal) || 0;
-  return { amount: Math.max(0, target - paid), late };
+  const target = fixedTarget != null ? fixedTarget : (Number(late ? data.tariffs.late : data.tariffs.normal) || 0);
+  const amount = Math.max(0, target - monthPaidFor(s.id, monthKey));
+  return { amount, late: late && fixedTarget == null };
 }
 
 function recomputeMonthlyAmount() {
@@ -644,24 +667,36 @@ $("paymentForm")?.addEventListener("submit", async e => {
 
   if (isMonthly) {
     const checks = [...document.querySelectorAll("#pendingMonthsList .month-check:checked")]
-      .map(c => ({ month: c.value, amount: Number(c.dataset.amount) || 0 }))
+      .map(c => ({ month: c.value, outstanding: Number(c.dataset.amount) || 0 }))
       .sort((a, b) => a.month.localeCompare(b.month));
 
     if (!checks.length) { notice("Selecciona al menos un mes a cancelar.", true); return; }
 
     const matricula = /matr[ií]cula/i.test(concept) ? (Number(data.tariffs.matricula) || 0) : 0;
-    const grandTotal = checks.reduce((s, c) => s + c.amount, 0) + matricula;
+
+    // "Valor total a cobrar" (editable): se reparte entre los meses del más antiguo al más reciente.
+    let chargeLeft = Number($("payAmount")?.value);
+    if (!Number.isFinite(chargeLeft) || chargeLeft < 0) { notice("Monto a cobrar inválido.", true); return; }
+    checks.forEach((sel, i) => {
+      const isLast = i === checks.length - 1;
+      const charge = isLast ? chargeLeft : Math.min(sel.outstanding, chargeLeft);
+      sel.charge = Math.max(0, charge);
+      chargeLeft -= sel.charge;
+    });
+
+    const grandTotal = checks.reduce((s, c) => s + c.charge, 0) + matricula;
+
+    // "Monto que paga hoy": se reparte entre los meses (del más antiguo al más reciente) para pagos parciales
     let remaining = Number($("payAbono")?.value);
     if (!Number.isFinite(remaining) || remaining < 0) { notice("Monto inválido.", true); return; }
     remaining = Math.min(remaining, grandTotal);
 
-    // Reparte el pago entre los meses (del más antiguo al más reciente): permite pagos parciales
     checks.forEach(sel => {
-      if (remaining <= 0) return;
-      const pay = Math.min(remaining, sel.amount);
+      if (remaining <= 0 || sel.charge <= 0) return;
+      const pay = Math.min(remaining, sel.charge);
       remaining -= pay;
       const obId = `OB-${String(data.nextObligation++).padStart(5, "0")}`;
-      data.obligations.push({ id: obId, studentId: s.id, concept, monthlyType: monthIsLate(sel.month) ? "late" : "normal", total: sel.amount, balance: sel.amount - pay, created: cleanDate, coveredMonth: sel.month });
+      data.obligations.push({ id: obId, studentId: s.id, concept, monthlyType: monthChargeForForm(sel.month).late ? "late" : "normal", total: sel.charge, balance: sel.charge - pay, created: cleanDate, coveredMonth: sel.month });
       const p = { receipt: `LP-${String(data.nextReceipt++).padStart(6, "0")}`, obligationId: obId, studentId: s.id, studentName: `${s.names} ${s.last}`, cedula: s.cedula, concept, coveredMonth: sel.month, recordDate: cleanDate, amount: pay, notes };
       data.abonos.push(p); created.push(p);
     });
@@ -675,7 +710,7 @@ $("paymentForm")?.addEventListener("submit", async e => {
       data.abonos.push(p); created.push(p);
     }
 
-    if (!created.length) { notice("El monto a pagar debe ser mayor a 0.", true); return; }
+    if (!created.length) { notice("El monto a cobrar debe ser mayor a 0.", true); return; }
   } else {
     const total = Number($("payAmount")?.value), abono = Number($("payAbono")?.value);
     if (!Number.isFinite(total) || total < 0 || !Number.isFinite(abono) || abono < 0) { notice("Valores inválidos.", true); return; }
@@ -701,7 +736,7 @@ function getJoinedReceipt(abono) {
 
 // Generar mensaje detallado para WhatsApp
 function getReceiptMessage(p) {
-  return `*CLUB LOS PUMAS* 🐆\n_Comprobante de Movimiento_\n\n*Recibo:* ${p.receipt}\n*Alumno:* ${p.studentName}\n*Concepto:* ${p.concept}${p.coveredMonth ? `\n*Cubre:* ${monthLabel(p.coveredMonth)}` : ""}\n*Fecha:* ${p.recordDate}\n\n*Total a pagar:* ${money(p.total)}\n*Abono:* 💵 ${money(p.amount)}\n*Saldo pendiente:* 🔴 ${money(p.balance)}${p.notes ? `\n*Nota:* ${p.notes}` : ''}`;
+  return `*CLUB LOS PUMAS* \n_Comprobante de Movimiento_\n\n*Recibo:* ${p.receipt}\n*Alumno:* ${p.studentName}\n*Concepto:* ${p.concept}${p.coveredMonth ? `\n*Cubre:* ${monthLabel(p.coveredMonth)}` : ""}\n*Fecha:* ${p.recordDate}\n\n*Total a pagar:* ${money(p.total)}\n*Abono:*  ${money(p.amount)}\n*Saldo pendiente:*  ${money(p.balance)}${p.notes ? `\n*Nota:* ${p.notes}` : ''}`;
 }
 
 // --- RECIBO Y PDF ---
@@ -1402,7 +1437,9 @@ function renderDashboard() {
 
   const monthList = $("dashMonthlyList");
   if (monthList) {
-    monthList.innerHTML = debtors.length ? debtors.map(s => {
+    const q = ($("dashMonthlySearch")?.value || "").toLowerCase().trim();
+    const shown = q ? debtors.filter(s => [s.cedula, s.names, s.last].join(" ").toLowerCase().includes(q)) : debtors;
+    monthList.innerHTML = shown.length ? shown.map(s => {
       const d = studentDebt(s);
       const monthsTxt = d.count === 1 ? "1 mes" : `${d.count} meses`;
       return `<div class="debtor-item">
@@ -1415,10 +1452,12 @@ function renderDashboard() {
           <button class="mini-btn red" data-pay-for="${s.id}">Cobrar</button>
         </div>
       </div>`;
-    }).join("") : '<div class="empty-state">¡Todos al día este mes! 🎉</div>';
+    }).join("") : `<div class="empty-state">${q ? "Sin resultados para \"" + esc(q) + "\"." : "¡Todos al día este mes! 🎉"}</div>`;
     monthList.querySelectorAll("[data-pay-for]").forEach(b => b.addEventListener("click", () => { showView("payment"); selectStudentForPayment(b.dataset.payFor); }));
   }
 }
+
+$("dashMonthlySearch")?.addEventListener("input", renderDashboard);
 
 function renderAll() {
   renderDashboard();
