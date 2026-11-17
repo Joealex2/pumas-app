@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Club Los Pumas | Gestión de pagos</title>
-  <link rel="stylesheet" href="./styles.css?v=21">
+  <link rel="stylesheet" href="./styles.css?v=34">
   <link rel="manifest" href="./manifest.json">
   <meta name="theme-color" content="#211e1e">
 </head>
@@ -26,7 +26,7 @@
         <button class="nav-item" data-view="students"><span class="nav-ico">👥</span>Alumnos</button>
         <button class="nav-item" data-view="payment"><span class="nav-ico">💵</span>Registrar pago</button>
         <button class="nav-item" data-view="history"><span class="nav-ico">🧾</span>Historiales</button>
-        <button class="nav-item" data-view="tariffs"><span class="nav-ico">⚙️</span>Tarifas</button>
+        <button class="nav-item" data-view="backup"><span class="nav-ico">💾</span>Respaldo</button>
       </nav>
     </div>
 
@@ -84,10 +84,10 @@
             <b>Historiales</b>
             <small>Recibos y saldos</small>
           </button>
-          <button class="quick-card" data-go="tariffs">
-            <span class="quick-ico">⚙️</span>
-            <b>Tarifas</b>
-            <small>Precios oficiales</small>
+          <button class="quick-card" data-go="backup">
+            <span class="quick-ico">💾</span>
+            <b>Respaldo</b>
+            <small>Exportar e importar JSON</small>
           </button>
         </div>
 
@@ -125,6 +125,19 @@
           <h3 id="studentFormTitle">Registro de alumnos</h3>
           <form id="studentForm">
             <div class="form-grid">
+              <div class="form-group" style="grid-column:1/-1;">
+                <label>Tipo de alumno</label>
+                <div style="display:grid; gap:8px;">
+                  <label class="switch-row" style="margin:0;">
+                    <input type="radio" name="studentType" id="studentTypeNew" value="nuevo" checked>
+                    <span><b>Alumno nuevo</b> — requiere matrícula; su primer mes no lleva recargo.</span>
+                  </label>
+                  <label class="switch-row" style="margin:0;">
+                    <input type="radio" name="studentType" id="studentTypeOld" value="antiguo">
+                    <span><b>Alumno antiguo</b> — ya es socio; aplica recargo desde el primer mes.</span>
+                  </label>
+                </div>
+              </div>
               <div class="form-group">
                 <label>ID Alumno</label>
                 <input type="text" id="studentId" readonly>
@@ -148,12 +161,16 @@
                   <option value="Jóvenes">Jóvenes</option>
                 </select>
               </div>
-              <div class="form-group">
+              <div class="form-group" id="studentStatusRow">
                 <label>Estado</label>
                 <select id="studentStatus">
                   <option value="Activo">Activo</option>
                   <option value="Inactivo">Inactivo</option>
                 </select>
+              </div>
+              <div class="form-group">
+                <label>Precio mensual ($)</label>
+                <input type="number" id="studentMonthlyPrice" step="0.01" min="0" placeholder="Usa tarifa global">
               </div>
             </div>
             <div class="form-actions" style="margin-top:15px; display:flex; gap:10px;">
@@ -220,6 +237,10 @@
                 <input type="checkbox" id="lateFeeToggle">
                 <span id="lateFeeLabel">Aplicar recargo por atraso</span>
               </label>
+              <div class="form-group hidden" id="matriculaRow" style="grid-column:1/-1;">
+                <label>Matrícula / inscripción ($)</label>
+                <input type="number" step="0.01" min="0" id="matriculaAmount" value="10">
+              </div>
               <div class="form-group">
                 <label>Valor total a cobrar ($) *</label>
                 <input type="number" step="0.01" id="payAmount" required>
@@ -320,26 +341,10 @@
         </div>
       </section>
 
-      <!-- TARIFFS VIEW -->
-      <section id="view-tariffs" class="view hidden">
-        <h2><span class="h2-ico">⚙️</span>Configuración de Tarifas y Respaldo</h2>
+      <!-- BACKUP VIEW -->
+      <section id="view-backup" class="view hidden">
+        <h2><span class="h2-ico">💾</span>Respaldo y Copias de Seguridad</h2>
         <div class="form-grid">
-          <div class="card">
-            <h3>Tarifas Oficiales ($)</h3>
-            <form id="tariffForm" style="margin-top:15px;">
-              <div class="form-group"><label>Mensualidad Normal</label><input type="number" step="0.01" id="tariffNormal" required></div>
-              <div class="form-group"><label>Mensualidad Atrasada</label><input type="number" step="0.01" id="tariffLate" required></div>
-              <div class="form-group"><label>Matrícula</label><input type="number" step="0.01" id="tariffMatricula" required></div>
-              <div class="form-group"><label>Implementos</label><input type="number" step="0.01" id="tariffImplements" required></div>
-              <div class="form-group"><label>Uniformes</label><input type="number" step="0.01" id="tariffUniform" required></div>
-              <div class="form-group"><label>Otro / General</label><input type="number" step="0.01" id="tariffOther" required></div>
-              <div style="margin-top:15px; display:flex; gap:10px;">
-                <button type="submit" class="primary">Guardar tarifas</button>
-                <button type="button" class="secondary" id="resetTariffs">Restablecer por defecto</button>
-              </div>
-            </form>
-          </div>
-
           <div class="card">
             <h3>Respaldo y Copias de Seguridad</h3>
             <p class="muted" style="margin:10px 0 15px 0;">Exporta o importa todos los datos de alumnos, obligaciones y recibos en formato JSON.</p>
@@ -371,7 +376,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="./app.js?v=21"></script>
+  <script src="./app.js?v=34"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {

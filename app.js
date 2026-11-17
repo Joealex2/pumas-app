@@ -29,6 +29,7 @@ let data = {
 
 // Permite recobrar un mes ya cancelado después de aceptar la advertencia
 let forcePaidMonthly = false;
+let lateFeeManuallySet = false;
 
 // Cargar datos desde Cloud Firestore
 async function loadData() {
@@ -43,7 +44,10 @@ async function loadData() {
       if (!data.tariffs) data.tariffs = { ...defaultTariffs };
       // Migración: los alumnos sin "mes de inicio" arrancan limpios desde el mes actual
       let migrated = false;
-      (data.students || []).forEach(s => { if (!s.since) { s.since = currentMonthKey(); migrated = true; } });
+      (data.students || []).forEach(s => {
+        if (!s.since) { s.since = currentMonthKey(); migrated = true; }
+        if (!("monthlyPrice" in s)) { s.monthlyPrice = null; migrated = true; }
+      });
       if (migrated) { try { await docRef.set(data); } catch (e) { console.warn("No se pudo guardar la migración:", e); } }
     } else {
       await db.collection("pumas_db").doc("configuracion_general").set(data);
@@ -68,6 +72,28 @@ async function saveData() {
 
 function money(n) { return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(Number(n) || 0); }
 function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+
+function parsePrice(value) {
+  const v = String(value ?? "").trim();
+  if (!v) return null;
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+// Precio del alumno; vacío = tarifa global. El precio con atraso es siempre
+// la mensualidad más el recargo global (atrasada - normal).
+function lateSurcharge() {
+  return Math.max(0, (Number(data.tariffs.late) || 0) - (Number(data.tariffs.normal) || 0));
+}
+
+function studentPrice(student, type) {
+  const ownNormal = parsePrice(student && student.monthlyPrice);
+  const normal = ownNormal != null ? ownNormal : (Number(data.tariffs.normal) || 0);
+  if (type === "late") {
+    return normal + lateSurcharge();
+  }
+  return normal;
+}
 function today() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }
 
 // La mensualidad no tiene recargo si se paga hasta el día 15.
@@ -136,29 +162,44 @@ function monthIsLate(key) {
   return false;
 }
 
-function monthAmount(key) {
-  return Number(monthIsLate(key) ? data.tariffs.late : data.tariffs.normal) || 0;
+function monthAmount(key, student) {
+  return studentPrice(student, monthIsLate(key) ? "late" : "normal");
 }
 
-// Monto fijado para un mes cuando ya se registró un cobro (el mayor total de sus comprobantes).
+// Monto base de un mes: el mayor cobro normal. Los cobros generados con recargo
+// no cuentan como base para no duplicarlo al volver a calcular la deuda.
 // Devuelve null si el mes aún no tiene ningún cobro registrado.
 function monthBaseTarget(studentId, monthKey) {
   const obls = (data.obligations || []).filter(o =>
     o.studentId === studentId && isMensualidad(o) && o.coveredMonth === monthKey);
   if (!obls.length) return null;
-  return obls.reduce((mx, o) => Math.max(mx, Number(o.total) || 0), 0);
+  const normales = obls.filter(o => o.monthlyType !== "late");
+  const base = (normales.length ? normales : obls)
+    .reduce((mx, o) => Math.max(mx, Number(o.total) || 0), 0);
+  return normales.length ? base : Math.max(0, base - lateSurcharge());
 }
 
-// Monto objetivo de un mes: el cobro ya fijado, o la tarifa (con recargo si vencido).
+// Solo se recarga un cobro fijado que sigue pendiente; si el mes ya fue pagado
+// íntegramente se conserva su precio y no se genera un recargo retroactivo.
+function monthTargetWithLate(student, monthKey, fixed) {
+  if (fixed == null || !student) return fixed;
+  const obls = (data.obligations || []).filter(o =>
+    o.studentId === student.id && isMensualidad(o) && o.coveredMonth === monthKey);
+  if (!obls.some(o => (Number(o.balance) || 0) > 0)) return fixed;
+  if (monthPaidFor(student.id, monthKey) >= fixed) return fixed;
+  return fixed + lateSurcharge();
+}
+
+// Monto objetivo de un mes: el cobro ya fijado (con recargo si sigue pendiente), o la tarifa.
 // Si el alumno ya cubrió la tarifa normal, no se le aplica recargo retroactivo.
 function monthTargetFor(studentId, monthKey, waive = false) {
+  const s = data.students.find(x => x.id === studentId);
   const fixed = monthBaseTarget(studentId, monthKey);
-  if (fixed != null) return fixed;
-  const normal = Number(data.tariffs.normal) || 0;
+  const late = monthIsLateFor(s, monthKey) && !waive;
+  if (fixed != null) return late ? monthTargetWithLate(s, monthKey, fixed) : fixed;
+  const normal = studentPrice(s, "normal");
   if (monthPaidFor(studentId, monthKey) >= normal) return normal;
-  return (monthIsLate(monthKey) && !waive)
-    ? (Number(data.tariffs.late) || 0)
-    : normal;
+  return late ? studentPrice(s, "late") : normal;
 }
 
 // Total abonado por el alumno a un mes concreto (permite pagos parciales)
@@ -185,7 +226,7 @@ function pendingMonthsFor(student) {
     const amount = monthOutstanding(student.id, k, false);
     if (amount <= 0) return; // mes saldado
     const fixed = monthBaseTarget(student.id, k) != null;
-    out.push({ month: k, label: monthLabel(k), amount, paid: monthPaidFor(student.id, k), late: !fixed && monthIsLate(k) });
+    out.push({ month: k, label: monthLabel(k), amount, paid: monthPaidFor(student.id, k), late: !fixed && monthIsLateFor(student, k) });
   });
   return out;
 }
@@ -256,7 +297,6 @@ function showView(name) {
   });
   if (name === "payment") resetPaymentFormToNew();
   if (name === "history") renderHistory();
-  if (name === "tariffs") fillTariffs();
 }
 
 window.addEventListener("DOMContentLoaded", async () => {
@@ -276,10 +316,22 @@ document.querySelectorAll("[data-go]").forEach(b => b.addEventListener("click", 
 // --- GESTIÓN DE ALUMNOS ---
 let editingStudentId = null;
 
+function isNewStudentForm() {
+  return $("studentTypeNew")?.checked === true;
+}
+
+function updateStudentTypeUI() {
+  const isNew = isNewStudentForm();
+  if ($("studentStatusRow")) $("studentStatusRow").style.display = isNew ? "none" : "";
+  if (isNew && $("studentStatus")) $("studentStatus").value = "Activo";
+}
+
 function resetStudentForm() {
   $("studentForm")?.reset();
   if ($("studentId")) $("studentId").value = `LP-${String(data.nextStudent || 1).padStart(4, "0")}`;
   if ($("studentFormTitle")) $("studentFormTitle").textContent = "Registro de alumnos";
+  if ($("studentTypeNew")) $("studentTypeNew").checked = true;
+  updateStudentTypeUI();
   if ($("studentSubmitBtn")) $("studentSubmitBtn").textContent = "Guardar alumno";
   $("studentCancelEditBtn")?.classList.add("hidden");
   if ($("studentCedula")) $("studentCedula").disabled = false;
@@ -287,6 +339,7 @@ function resetStudentForm() {
 }
 
 $("studentCancelEditBtn")?.addEventListener("click", resetStudentForm);
+document.querySelectorAll('input[name="studentType"]').forEach(r => r.addEventListener("change", updateStudentTypeUI));
 $("studentCedula")?.addEventListener("input", e => e.target.value = e.target.value.replace(/\D/g, "").slice(0, 10));
 
 $("studentForm")?.addEventListener("submit", e => {
@@ -304,21 +357,29 @@ $("studentForm")?.addEventListener("submit", e => {
       data.students[sIndex].names = $("studentNames")?.value.trim();
       data.students[sIndex].last = $("studentLast")?.value.trim();
       data.students[sIndex].group = $("studentGroup")?.value;
-      data.students[sIndex].status = $("studentStatus")?.value;
+      const isNew = isNewStudentForm();
+      data.students[sIndex].status = isNew ? "Activo" : $("studentStatus")?.value;
+      data.students[sIndex].isNew = isNew;
+      if (isNew && !data.students[sIndex].enrollmentExemptMonth) data.students[sIndex].enrollmentExemptMonth = currentMonthKey();
+      data.students[sIndex].monthlyPrice = parsePrice($("studentMonthlyPrice")?.value);
       saveData();
       notice("Alumno actualizado.");
       resetStudentForm();
     }
   } else {
     if (data.students.some(s => s.cedula === cedula)) { notice("Cédula duplicada.", true); return; }
+    const isNew = isNewStudentForm();
     const s = {
       id: `LP-${String(data.nextStudent++).padStart(4, "0")}`,
       cedula,
       names: $("studentNames")?.value.trim(),
       last: $("studentLast")?.value.trim(),
       group: $("studentGroup")?.value,
-      status: $("studentStatus")?.value,
-      since: currentMonthKey()
+      status: isNew ? "Activo" : $("studentStatus")?.value,
+      since: currentMonthKey(),
+      isNew,
+      ...(isNew ? { enrollmentExemptMonth: currentMonthKey() } : {}),
+      monthlyPrice: parsePrice($("studentMonthlyPrice")?.value)
     };
     data.students.push(s);
     saveData();
@@ -340,6 +401,10 @@ window.editStudent = function (id) {
   if ($("studentLast")) $("studentLast").value = s.last;
   if ($("studentGroup")) $("studentGroup").value = s.group;
   if ($("studentStatus")) $("studentStatus").value = s.status || "Activo";
+  if ($("studentTypeNew")) $("studentTypeNew").checked = s.isNew === true;
+  if ($("studentTypeOld")) $("studentTypeOld").checked = s.isNew !== true;
+  updateStudentTypeUI();
+  if ($("studentMonthlyPrice")) $("studentMonthlyPrice").value = s.monthlyPrice ?? "";
 
   if ($("studentFormTitle")) $("studentFormTitle").textContent = `Editando a: ${s.names} ${s.last}`;
   if ($("studentSubmitBtn")) $("studentSubmitBtn").textContent = "Actualizar";
@@ -393,11 +458,12 @@ function renderStudents() {
   $("studentsList").innerHTML = `<table style="min-width: 720px;"><thead><tr><th>Alumno</th><th>Cédula / ID</th><th>Grupo</th><th>Estado</th><th>Deuda</th><th>Acciones</th></tr></thead><tbody>${arr.map(s => {
     const status = s.status || "Activo";
     const statusBadge = status === "Activo" ? `<span class="badge" style="background:#e6f7ed;color:#177344">Activo</span>` : `<span class="badge" style="background:#fde7e9;color:#a41327">Inactivo</span>`;
+    const newBadge = s.isNew ? ` <span class="badge" style="background:#e8f0ff;color:#1e40af">Nuevo</span>` : "";
     const cobrarBtn = status === "Activo" ? `<button class="mini-btn red" style="padding:6px 12px; font-weight:600;" data-pay-for="${s.id}">Cobrar</button> ` : "";
     const debt = studentDebt(s).total;
     const debtCell = debt > 0 ? `<span style="color:var(--red); font-weight:700;">${money(debt)}</span>` : `<span class="muted">—</span>`;
     return `<tr>
-        <td><b>${esc(s.names)} ${esc(s.last)}</b></td>
+        <td><b>${esc(s.names)} ${esc(s.last)}</b>${newBadge}</td>
         <td>${esc(s.cedula)}<span class="subline">${esc(s.id)}</span></td>
         <td>${esc(s.group)}</td>
         <td>${statusBadge}</td>
@@ -416,8 +482,8 @@ function renderStudents() {
 
 // --- CARGA MASIVA DE ALUMNOS (CSV) ---
 $("btnDownloadTemplate")?.addEventListener("click", () => {
-  const csvHeader = "cedula,nombres,apellidos,grupo,estado\n";
-  const csvExample = "1727363986,Joe Alexander,Gavilanez Paucar,Jóvenes,Activo\n1712345678,Matias Josue,Gavilanez Paucar,Niños,Activo";
+  const csvHeader = "cedula,nombres,apellidos,grupo,estado,precio_mensual,nuevo\n";
+  const csvExample = "1727363986,Joe Alexander,Gavilanez Paucar,Jóvenes,Activo,35,si\n1712345678,Matias Josue,Gavilanez Paucar,Niños,Activo,,no";
   const blob = new Blob([csvHeader + csvExample], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -453,6 +519,8 @@ $("btnImportStudentsCSV")?.addEventListener("change", (e) => {
       const last = cols[2];
       const group = cols[3] || "Niños";
       const status = cols[4] || "Activo";
+      const monthlyPrice = parsePrice(cols[5]);
+      const isNew = /^(si|sí|1|true)$/i.test(cols[6] || "");
 
       if (!cedula || !names || !last) continue;
 
@@ -467,7 +535,11 @@ $("btnImportStudentsCSV")?.addEventListener("change", (e) => {
         names: names,
         last: last,
         group: (group.toLowerCase().includes("jov") || group.toLowerCase().includes("juv")) ? "Jóvenes" : "Niños",
-        status: status.toLowerCase().includes("inac") ? "Inactivo" : "Activo"
+        status: isNew ? "Activo" : status.toLowerCase().includes("inac") ? "Inactivo" : "Activo",
+        since: currentMonthKey(),
+        isNew,
+        ...(isNew ? { enrollmentExemptMonth: currentMonthKey() } : {}),
+        monthlyPrice
       };
 
       data.students.push(newStudent);
@@ -515,10 +587,12 @@ $("payStudentClear")?.addEventListener("click", () => {
 function selectStudentForPayment(studentId) {
   const s = data.students.find(x => x.id === studentId); if (!s) return;
   if ((s.status || "Activo") === "Inactivo") { notice("Este alumno está inactivo. Actívalo para poder registrar un pago.", true); return; }
+  resetPaymentExtras();
   if ($("payStudentId")) $("payStudentId").value = s.id;
   $("payStudentSearch")?.classList.add("hidden"); $("payStudentResults")?.classList.add("hidden");
   $("payStudentSelected")?.classList.remove("hidden");
   if ($("payStudentName")) $("payStudentName").textContent = `${s.names} ${s.last}`;
+  updateSuggestedAmount();
   warnIfMonthlyPaid();
 }
 
@@ -549,21 +623,28 @@ async function warnIfMonthlyPaid() {
   updateSuggestedAmount();
 }
 
+function resetPaymentExtras() {
+  lateFeeManuallySet = false;
+  if ($("lateFeeToggle")) $("lateFeeToggle").checked = false;
+  if ($("matriculaAmount")) $("matriculaAmount").value = 10;
+}
+
 function resetPaymentFormToNew() {
+  resetPaymentExtras();
   if ($("payConcept")) updateSuggestedAmount();
 }
 
-function tariffFor(concept, type) {
-  if (concept === "Mensualidad") return type === "late" ? data.tariffs.late : data.tariffs.normal;
-  if (concept === "Mensualidad + Matrícula") return data.tariffs.normal + data.tariffs.matricula;
+function tariffFor(concept, type, student) {
+  if (concept === "Mensualidad") return studentPrice(student, type);
+  if (concept === "Mensualidad + Matrícula") return studentPrice(student, "normal") + (Number($("matriculaAmount")?.value) || 0);
   if (concept === "Implementos deportivos") return data.tariffs.implements;
-  if (concept === "Uniformes") return data.tariffs.uniform;
+  if (concept === "Uniformes") return 0;
   return data.tariffs.other;
 }
 
 function recomputeAmount() {
   const concept = $("payConcept")?.value;
-  const suggested = Number(tariffFor(concept, "normal")).toFixed(2);
+  const suggested = Number(tariffFor(concept, "normal", selectedStudent())).toFixed(2);
   if ($("payAmount")) $("payAmount").value = suggested;
   if ($("payAbono")) $("payAbono").value = suggested;
   updateBalance();
@@ -573,6 +654,22 @@ function recomputeAmount() {
 function selectedStudent() {
   const id = $("payStudentId")?.value;
   return id ? data.students.find(s => s.id === id) : null;
+}
+
+// Un alumno con obligaciones o abonos ya es socio: la opción de matrícula es solo para nuevos.
+function hasPaymentHistory(studentId) {
+  if (!studentId) return false;
+  return (data.obligations || []).some(o => o.studentId === studentId)
+    || (data.abonos || []).some(a => a.studentId === studentId);
+}
+
+// El mes de ingreso de un alumno nuevo no lleva recargo; desde el segundo mes aplica el reglamento.
+function isEnrollmentMonthFree(student, monthKey) {
+  return !!student && !!student.enrollmentExemptMonth && student.enrollmentExemptMonth === monthKey;
+}
+
+function monthIsLateFor(student, monthKey) {
+  return !!student && !isEnrollmentMonthFree(student, monthKey) && monthIsLate(monthKey);
 }
 
 function renderPendingMonths() {
@@ -610,13 +707,11 @@ function renderPendingMonths() {
   const refDate = $("recordDate")?.value || today();
   const refMonth = String(refDate).slice(0, 7);
   const lateRow = $("lateFeeRow");
-  const refMonthPendingLate = isMonthly && isPastDue(refDate) && months.some(m => m.month === refMonth);
+  const refMonthPendingLate = isMonthly && isPastDue(refDate) && months.some(m => m.month === refMonth && !isEnrollmentMonthFree(s, m.month));
   if (lateRow) {
-    const wasHidden = lateRow.classList.contains("hidden");
     lateRow.classList.toggle("hidden", !refMonthPendingLate);
-    if (refMonthPendingLate && wasHidden && $("lateFeeToggle")) $("lateFeeToggle").checked = true;
-    const diff = (Number(data.tariffs.late) || 0) - (Number(data.tariffs.normal) || 0);
-    if ($("lateFeeLabel")) $("lateFeeLabel").textContent = `Aplicar recargo por atraso (+${money(diff)})`;
+    if (refMonthPendingLate && !lateFeeManuallySet && $("lateFeeToggle")) $("lateFeeToggle").checked = true;
+    if ($("lateFeeLabel")) $("lateFeeLabel").textContent = `Aplicar recargo por atraso (+${money(lateSurcharge())})`;
   }
 
   if (!months.length) {
@@ -647,39 +742,53 @@ function monthChargeForForm(monthKey) {
   if (!s) return { amount: 0, late: false };
   const fixedTarget = monthBaseTarget(s.id, monthKey);
   let late;
-  if (monthKey < refMonth) late = true;
+  if (isEnrollmentMonthFree(s, monthKey)) late = false;
+  else if (monthKey < refMonth) late = true;
   else if (monthKey === refMonth) late = isPastDue(refDate) && !waive;
   else late = false;
-  const target = fixedTarget != null ? fixedTarget : (Number(late ? data.tariffs.late : data.tariffs.normal) || 0);
+  const adjustedTarget = (fixedTarget != null && late) ? monthTargetWithLate(s, monthKey, fixedTarget) : fixedTarget;
+  const target = adjustedTarget != null ? adjustedTarget : studentPrice(s, late ? "late" : "normal");
   let amount = Math.max(0, target - monthPaidFor(s.id, monthKey));
   if (forcePaidMonthly && amount <= 0) amount = target;
-  return { amount, late: late && fixedTarget == null };
+  return { amount, late: late && (fixedTarget == null || adjustedTarget > fixedTarget) };
 }
 
 function recomputeMonthlyAmount() {
   const concept = $("payConcept")?.value || "";
   const checks = [...document.querySelectorAll("#pendingMonthsList .month-check:checked")];
   let total = checks.reduce((s, c) => s + (Number(c.dataset.amount) || 0), 0);
-  if (/matr[ií]cula/i.test(concept)) total += Number(data.tariffs.matricula) || 0;
+  if (/matr[ií]cula/i.test(concept)) total += Number($("matriculaAmount")?.value) || 0;
   if ($("payAmount")) $("payAmount").value = total.toFixed(2);
   if ($("payAbono")) $("payAbono").value = total.toFixed(2);
   updateBalance();
 }
 
 function updateSuggestedAmount() {
-  const isMonthly = /mensualidad/i.test($("payConcept")?.value || "");
+  const select = $("payConcept");
+  const option = select && [...select.options].find(o => o.value === "Mensualidad + Matrícula");
+  const s = selectedStudent();
+  const canEnroll = !s || (s.isNew === true && !hasPaymentHistory(s.id));
+  if (option) {
+    option.hidden = !canEnroll;
+    option.disabled = !canEnroll;
+    if (!canEnroll && select.value === option.value) select.value = "Mensualidad";
+  }
+  const concept = select?.value || "";
+  const isMonthly = /mensualidad/i.test(concept);
+  $("matriculaRow")?.classList.toggle("hidden", !/matr[ií]cula/i.test(concept));
   renderPendingMonths();
   if (isMonthly) recomputeMonthlyAmount(); else recomputeAmount();
 }
 
 $("payConcept")?.addEventListener("change", () => warnIfMonthlyPaid());
+$("matriculaAmount")?.addEventListener("input", updateSuggestedAmount);
 $("recordDate")?.addEventListener("change", updateSuggestedAmount);
 $("lateFeeToggle")?.addEventListener("change", () => {
+  lateFeeManuallySet = true;
+  const checked = [...document.querySelectorAll("#pendingMonthsList .month-check:checked")].map(cb => cb.value);
+  renderPendingMonths();
   document.querySelectorAll("#pendingMonthsList .month-check").forEach(cb => {
-    const ch = monthChargeForForm(cb.value);
-    cb.dataset.amount = ch.amount;
-    const item = cb.closest(".month-item");
-    if (item) item.classList.toggle("late", ch.late);
+    cb.checked = checked.includes(cb.value);
   });
   recomputeMonthlyAmount();
 });
@@ -711,6 +820,11 @@ $("paymentForm")?.addEventListener("submit", async e => {
   if (!s) { notice("Alumno no encontrado.", true); return; }
 
   const concept = $("payConcept")?.value || "";
+  if (/matr[ií]cula/i.test(concept) && (!s.isNew || hasPaymentHistory(s.id))) {
+    notice("Esa opción es solo para alumnos nuevos; este alumno es antiguo o ya tiene historial.", true);
+    updateSuggestedAmount();
+    return;
+  }
   const cleanDate = ($("recordDate")?.value || today()).trim();
   const notes = $("payNotes")?.value.trim() || "";
   const isMonthly = /mensualidad/i.test(concept);
@@ -723,7 +837,7 @@ $("paymentForm")?.addEventListener("submit", async e => {
 
     if (!checks.length) { notice("Selecciona al menos un mes a cancelar.", true); return; }
 
-    const matricula = /matr[ií]cula/i.test(concept) ? (Number(data.tariffs.matricula) || 0) : 0;
+    const matricula = /matr[ií]cula/i.test(concept) ? (Number($("matriculaAmount")?.value) || 0) : 0;
 
     // "Valor total a cobrar" (editable): se reparte entre los meses del más antiguo al más reciente.
     let chargeLeft = Number($("payAmount")?.value);
@@ -797,69 +911,63 @@ function renderReceipt(p) {
         <span class="badge ${p.balance > 0 ? "partial" : ""}">${p.balance === 0 ? "Pagado" : "Abono registrado"}</span>
     </div>
     
-    <div class="receipt-paper" id="receiptPaper" style="padding:0; overflow:hidden; border:1px solid #ddd; border-radius:8px; background:#fff;">
-        <div style="background-color: #211e1e; color: #fff; padding: 20px; display: flex; align-items: center; gap: 15px;">
+    <div class="receipt-paper" id="receiptPaper" style="padding:0; overflow:hidden; border:1px solid #d8d3ca; border-radius:4px; background:#fff;">
+        <div style="background-color: #252321; color: #fff; padding: 22px 28px; display: flex; align-items: center; gap: 18px;">
             <img
     class="receipt-logo"
     src="./img/Pum.png?v=2"
     alt="Sello Club Los Pumas"
-    style="width: 70px; height: 70px; border-radius: 50%; object-fit: contain; background: #fff; padding: 2px;"
+    style="width: 66px; height: 66px; border-radius: 50%; object-fit: contain; background: #fff; padding: 3px; box-shadow: 0 0 0 1px rgba(255,255,255,.35);"
 >
             <div>
-                <h2 style="margin: 0 0 5px 0; font-size: 16.5px; line-height: 1.1; font-family: Arial, sans-serif;">Club Deportivo Formativo Especializado<br>Los Pumas</h2>
-                <p style="margin: 0; font-size: 10px; color: #d4d4d4; line-height: 1.4;">SANTA ISABEL, CALLE<br>QUEVEDO Y PICHINCHA<br>CEL: 0984302599</p>
+                <h2 style="margin: 0 0 6px 0; font-size: 17px; line-height: 1.2; font-family: Georgia, 'Times New Roman', serif; letter-spacing: .3px;">Club Deportivo Formativo Especializado<br>Los Pumas</h2>
+                <p style="margin: 0; font-size: 10px; color: #cfc9bf; line-height: 1.5; letter-spacing: .4px;">SANTA ISABEL, CALLE<br>QUEVEDO Y PICHINCHA<br>CEL: 0984302599</p>
             </div>
         </div>
         
-        <div style="padding: 25px;">
-            <h1 style="margin: 0 0 25px 0; font-size: 26px; font-weight: 900; letter-spacing: 0.5px; color: #000;">RECIBO</h1>
-            
-            <div style="font-size: 14px; margin-bottom: 25px; color: #000;">
-                <div style="display: flex; gap: 12px; margin-bottom: 12px;">
-                    <b style="flex: 0 0 85px; text-align: right;">Recibo N° :</b>
-                    <span style="flex: 1; border-bottom: 1px solid #777; padding-bottom: 2px;">${esc(p.receipt)}</span>
-                </div>
-                <div style="display: flex; gap: 12px; margin-bottom: 12px;">
-                    <b style="flex: 0 0 85px; text-align: right;">Recibo a: :</b>
-                    <span style="flex: 1; border-bottom: 1px solid #777; padding-bottom: 2px;">${esc(p.studentName)}</span>
-                </div>
-                <div style="display: flex; gap: 12px;">
-                    <b style="flex: 0 0 85px; text-align: right;">Fecha :</b>
-                    <span style="flex: 1; border-bottom: 1px solid #777; padding-bottom: 2px;">${esc(p.recordDate)}</span>
-                </div>
-                ${p.coveredMonth ? `<div style="display: flex; gap: 12px; margin-top: 12px;">
-                    <b style="flex: 0 0 85px; text-align: right;">Cubre :</b>
-                    <span style="flex: 1; border-bottom: 1px solid #777; padding-bottom: 2px; text-transform: capitalize;">${esc(monthLabel(p.coveredMonth))}</span>
-                </div>` : ""}
+        <div style="padding: 30px 32px;">
+            <div style="text-align: center; margin-bottom: 26px;">
+                <h1 style="margin: 0 0 12px 0; font-size: 28px; font-weight: normal; font-family: Georgia, 'Times New Roman', serif; letter-spacing: 3px; color: #1f1f1f;">RECIBO</h1>
+                <div style="height: 1px; background: #c9c4bb;"></div>
+                <div style="width: 64px; height: 2px; background: #252321; margin: 3px auto 0;"></div>
             </div>
             
-            <div style="margin-bottom: 40px;">
-                <div style="background-color: #26292b; color: #fff; display: inline-block; padding: 6px 14px; font-weight: bold; font-size: 13px;">Descripción:</div>
-                <div style="padding: 10px 0; border-bottom: 1px solid #777; font-size: 14px; min-height: 30px; color: #000;">
-                    ${esc(p.concept)} - Deuda total: ${money(p.total)}
-                    ${p.notes ? `<br><span style="font-size: 12px; color: #555;">(Nota: ${esc(p.notes)})</span>` : ""}
+            <div style="font-size: 13px; margin-bottom: ${p.notes ? "10px" : "26px"}; color: #1f1f1f; font-family: Georgia, 'Times New Roman', serif;">
+                <div style="display: flex; gap: 14px; margin-bottom: 14px;">
+                    <b style="flex: 0 0 100px; text-align: right; color: #4a453e;">Recibo N° :</b>
+                    <span style="flex: 1; border-bottom: 1px solid #c9c4bb; padding-bottom: 4px;">${esc(p.receipt)}</span>
+                </div>
+                <div style="display: flex; gap: 14px; margin-bottom: 14px;">
+                    <b style="flex: 0 0 100px; text-align: right; color: #4a453e;">Recibo a: :</b>
+                    <span style="flex: 1; border-bottom: 1px solid #c9c4bb; padding-bottom: 4px;">${esc(p.studentName)}</span>
+                </div>
+                <div style="display: flex; gap: 14px;">
+                    <b style="flex: 0 0 100px; text-align: right; color: #4a453e;">Fecha :</b>
+                    <span style="flex: 1; border-bottom: 1px solid #c9c4bb; padding-bottom: 4px;">${esc(p.recordDate)}</span>
+                </div>
+            </div>
+            ${p.notes ? `<div style="margin-bottom: 26px; background: #faf9f7; border-left: 2px solid #252321; padding: 10px 14px; font-family: Georgia, 'Times New Roman', serif; font-size: 13px; color: #1f1f1f;">
+                <b>Observaciones:</b> <i>${esc(p.notes)}</i>
+            </div>` : ""}
+            
+            <div style="display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 26px;">
+                <div style="flex: 1 1 180px; border: 1px solid #c9c4bb; background: #faf9f7; padding: 10px 14px; display: flex; justify-content: space-between; align-items: baseline; gap: 10px;">
+                    <b style="font-family: Georgia, 'Times New Roman', serif; font-size: 11px; color: #4a453e;">SALDO:</b>
+                    <span style="font-family: Georgia, 'Times New Roman', serif; font-size: 16px; font-weight: bold; color: var(--red);">${money(p.balance)}</span>
+                </div>
+                <div style="flex: 1 1 180px; border: 1px solid #c9c4bb; background: #faf9f7; padding: 10px 14px; display: flex; justify-content: space-between; align-items: baseline; gap: 10px;">
+                    <b style="font-family: Georgia, 'Times New Roman', serif; font-size: 11px; color: #4a453e;">Pago Total:</b>
+                    <span style="font-family: Georgia, 'Times New Roman', serif; font-size: 16px; font-weight: bold; color: #1f1f1f;">${money(p.amount)}</span>
                 </div>
             </div>
             
-            <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 10px; flex-wrap:wrap; gap:20px;">
-                <div style="display: flex; flex-direction: column; gap: 20px;">
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <div style="background-color: #b5b5b5; padding: 6px 10px; font-weight: bold; color: #000;">SALDO:</div>
-                        <div style="border-bottom: 1px solid #777; width: 85px; text-align: center; color: var(--red); font-weight: bold;">${money(p.balance)}</div>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 8px; align-self: flex-start;">
-                        <div style="background-color: #b5b5b5; padding: 6px 10px; font-weight: bold; color: #000;">Pago Total:</div>
-                        <div style="border-bottom: 1px solid #777; width: 85px; text-align: center; font-weight: bold; color: #000;">${money(p.amount)}</div>
-                    </div>
-                </div>
-                
-                <div style="text-align: center; width: 150px; margin-left:auto;">
-                    <div style="font-family: 'Georgia', serif; font-style: italic; font-size: 24px; color: #333; margin-bottom: 5px;">G Gavilanez</div>
-                    <div style="border-top: 1px solid #000; padding-top: 5px; font-size: 11px; font-weight: bold; line-height: 1.2; color: #000;">Lic. Galo Gavilanez<br>Director y Maestro</div>
-                </div>
+            <div style="text-align: center;">
+                <div style="font-family: Georgia, 'Times New Roman', serif; font-style: italic; font-size: 22px; color: #1f1f1f; margin-bottom: 6px;">G Gavilanez</div>
+                <div style="width: 120px; height: 1px; background: #1f1f1f; margin: 0 auto 8px;"></div>
+                <div style="font-family: Georgia, 'Times New Roman', serif; font-size: 11.5px; letter-spacing: .3px; line-height: 1.4; color: #1f1f1f;">Lic. Galo Gavilanez<br>Director y Maestro</div>
             </div>
         </div>
-        <div style="background-color: #26292b; height: 25px; width: 100%;"></div>
+        <div style="background-color: #252321; height: 25px; width: 100%;"></div>
     </div>
     
     <div class="receipt-actions" style="margin-top: 20px;">
@@ -936,7 +1044,7 @@ function buildPdfDoc(p, logo) {
   const doc = new jsPDF({ format: 'a5' });
 
   // Franja superior oscura (igual que el recibo en pantalla)
-  doc.setFillColor(33, 30, 30);
+  doc.setFillColor(37, 35, 33);
   doc.rect(0, 0, 148, 44, 'F');
 
   if (logo) {
@@ -948,64 +1056,69 @@ function buildPdfDoc(p, logo) {
   }
 
   doc.setTextColor(255, 255, 255);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(14);
+  doc.setFont("times", "bold");
+  doc.setFontSize(13.5);
   doc.text("Club Deportivo Formativo Especializado", 46, 16);
   doc.text("Los Pumas", 46, 23);
 
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(9);
+  doc.setFontSize(8.5);
+  doc.setTextColor(207, 201, 191);
   doc.text("SANTA ISABEL, CALLE QUEVEDO Y PICHINCHA", 46, 31);
   doc.text("CEL: 0984302599", 46, 36);
 
-  doc.setTextColor(0, 0, 0);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(22);
-  doc.text("RECIBO", 15, 58);
+  doc.setTextColor(31, 31, 31);
+  doc.setFont("times", "bold");
+  doc.setFontSize(26);
+  doc.text("RECIBO", 74, 58, { align: "center" });
+  doc.setDrawColor(201, 196, 187); doc.setLineWidth(0.15);
+  doc.line(15, 64, 133, 64);
+  doc.setDrawColor(37, 35, 33); doc.setLineWidth(0.4);
+  doc.line(58, 65.2, 90, 65.2);
 
-  doc.setFontSize(12);
-  doc.setFont("helvetica", "normal");
-  doc.text("Recibo Nº :", 15, 75); doc.text(String(p.receipt), 42, 75);
-  doc.text("Recibo a: :", 15, 83); doc.text(String(p.studentName), 42, 83);
-  doc.text("Fecha :", 15, 91); doc.text(String(p.recordDate), 42, 91);
+  doc.setFont("times", "normal");
+  doc.setFontSize(11.5);
+  doc.setTextColor(31, 31, 31);
+  doc.text("Recibo Nº :", 42, 75, { align: "right" }); doc.text(String(p.receipt), 45, 75);
+  doc.text("Recibo a: :", 42, 83, { align: "right" }); doc.text(String(p.studentName), 45, 83);
+  doc.text("Fecha :", 42, 91, { align: "right" }); doc.text(String(p.recordDate), 45, 91);
 
-  doc.setDrawColor(120, 120, 120);
-  doc.line(40, 76, 133, 76); doc.line(40, 84, 133, 84); doc.line(40, 92, 133, 92);
+  doc.setDrawColor(201, 196, 187); doc.setLineWidth(0.15);
+  doc.line(45, 76, 133, 76); doc.line(45, 84, 133, 84); doc.line(45, 92, 133, 92);
 
-  doc.setFillColor(38, 41, 43); doc.rect(15, 105, 30, 8, 'F');
-  doc.setTextColor(255, 255, 255); doc.setFont("helvetica", "bold"); doc.setFontSize(11);
-  doc.text("Descripción:", 18, 110.5);
-
-  doc.setTextColor(0, 0, 0); doc.setFont("helvetica", "normal");
-  const descText = `${p.concept} - Deuda Total: ${money(p.total)}`;
-  doc.text(descText, 15, 122);
   if (p.notes) {
-    doc.setFontSize(9); doc.setTextColor(80, 80, 80);
-    doc.text("(Nota: " + p.notes + ")", 15, 128);
+    const allNoteLines = doc.splitTextToSize(p.notes, 112);
+    const noteLines = allNoteLines.slice(0, 4);
+    if (allNoteLines.length > 4) noteLines[noteLines.length - 1] = noteLines[noteLines.length - 1].replace(/\s+\S+$/, "") + " …";
+    const panelBottom = 95 + 6 + noteLines.length * 5 + 3;
+    doc.setFillColor(250, 249, 247);
+    doc.rect(15, 95, 118, panelBottom - 95, 'F');
+    doc.setDrawColor(37, 35, 33); doc.setLineWidth(0.4);
+    doc.line(15, 95, 15, panelBottom);
+    doc.setFont("times", "bold"); doc.setFontSize(10.5); doc.setTextColor(74, 69, 62);
+    doc.text("Observaciones:", 19, 101);
+    doc.setFont("times", "italic"); doc.setTextColor(31, 31, 31);
+    noteLines.forEach((line, i) => doc.text(line, 19, 107 + i * 5));
   }
 
-  doc.setDrawColor(120, 120, 120);
-  doc.line(15, 132, 133, 132);
+  doc.setFillColor(250, 249, 247); doc.setDrawColor(201, 196, 187); doc.setLineWidth(0.15);
+  doc.rect(15, 145, 52, 9, 'FD');
+  doc.rect(81, 145, 52, 9, 'FD');
+  doc.setFont("times", "bold"); doc.setFontSize(10); doc.setTextColor(74, 69, 62);
+  doc.text("SALDO:", 18, 151.5);
+  doc.text("Pago Total:", 84, 151.5);
+  doc.setFontSize(13);
+  doc.setTextColor(199, 25, 45); doc.text(money(p.balance), 64, 151.5, { align: "right" });
+  doc.setTextColor(31, 31, 31); doc.text(money(p.amount), 130, 151.5, { align: "right" });
 
-  doc.setFillColor(181, 181, 181); doc.rect(15, 145, 22, 8, 'F');
-  doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(0, 0, 0);
-  doc.text("SALDO:", 17, 150.5);
-  doc.setTextColor(199, 25, 45); doc.text(money(p.balance), 40, 150.5);
-  doc.line(39, 152, 65, 152);
+  doc.setFont("times", "italic"); doc.setFontSize(20); doc.setTextColor(31, 31, 31);
+  doc.text("G Gavilanez", 74, 178, { align: "center" });
+  doc.setDrawColor(31, 31, 31); doc.setLineWidth(0.15); doc.line(59, 181, 89, 181);
+  doc.setFont("times", "normal"); doc.setFontSize(10.5);
+  doc.text("Lic. Galo Gavilanez", 74, 187, { align: "center" });
+  doc.text("Director y Maestro", 74, 192, { align: "center" });
 
-  doc.setTextColor(0, 0, 0); doc.rect(70, 155, 26, 8, 'F');
-  doc.text("Pago Total:", 72, 160.5); doc.text(money(p.amount), 98, 160.5);
-  doc.line(98, 162, 125, 162);
-
-  doc.setFont("times", "italic"); doc.setFontSize(22);
-  doc.text("G Gavilanez", 105, 182, { align: "center" });
-  doc.setDrawColor(0, 0, 0); doc.line(80, 185, 130, 185);
-
-  doc.setFont("helvetica", "bold"); doc.setFontSize(10);
-  doc.text("Lic. Galo Gavilanez", 105, 190, { align: "center" });
-  doc.text("Director y Maestro", 105, 195, { align: "center" });
-
-  doc.setFillColor(38, 41, 43); doc.rect(0, 202, 148, 8, 'F');
+  doc.setFillColor(37, 35, 33); doc.rect(0, 202, 148, 8, 'F');
   return doc;
 }
 
@@ -1099,83 +1212,99 @@ function drawReceiptCanvas(p, logoImg) {
   const Y = (mm) => mm * scale;
   const fs = (pt) => pt * 0.3528 * scale;
   const SANS = "Arial, Helvetica, sans-serif";
+  const SERIF = 'Georgia, "Times New Roman", serif';
 
   ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, W, H);
   ctx.textBaseline = "alphabetic";
   ctx.textAlign = "left";
 
   // Franja superior oscura
-  ctx.fillStyle = "#211e1e"; ctx.fillRect(0, 0, X(148), Y(44));
+  ctx.fillStyle = "#252321"; ctx.fillRect(0, 0, X(148), Y(44));
   if (logoImg) { try { ctx.drawImage(logoImg, X(12), Y(6), X(28), Y(28)); } catch (e) { console.warn(e); } }
 
   ctx.fillStyle = "#ffffff";
-  ctx.font = `bold ${fs(14)}px ${SANS}`;
+  ctx.font = `bold ${fs(13.5)}px ${SERIF}`;
   ctx.fillText("Club Deportivo Formativo Especializado", X(46), Y(16));
   ctx.fillText("Los Pumas", X(46), Y(23));
-  ctx.font = `${fs(9)}px ${SANS}`;
+  ctx.font = `${fs(8.5)}px ${SANS}`;
+  ctx.fillStyle = "#cfc9bf";
   ctx.fillText("SANTA ISABEL, CALLE QUEVEDO Y PICHINCHA", X(46), Y(31));
   ctx.fillText("CEL: 0984302599", X(46), Y(36));
 
   // Título
-  ctx.fillStyle = "#000000";
-  ctx.font = `bold ${fs(22)}px ${SANS}`;
-  ctx.fillText("RECIBO", X(15), Y(58));
+  ctx.fillStyle = "#1f1f1f";
+  ctx.font = `bold ${fs(26)}px ${SERIF}`;
+  ctx.textAlign = "center";
+  ctx.fillText("RECIBO", X(74), Y(58));
+  ctx.textAlign = "left";
+  ctx.strokeStyle = "#c9c4bb"; ctx.lineWidth = Math.max(1, scale * 0.05);
+  ctx.beginPath(); ctx.moveTo(X(15), Y(64)); ctx.lineTo(X(133), Y(64)); ctx.stroke();
+  ctx.strokeStyle = "#252321"; ctx.lineWidth = Math.max(1, scale * 0.12);
+  ctx.beginPath(); ctx.moveTo(X(58), Y(65.2)); ctx.lineTo(X(90), Y(65.2)); ctx.stroke();
 
   // Datos
-  ctx.font = `${fs(12)}px ${SANS}`;
-  ctx.strokeStyle = "rgb(120,120,120)"; ctx.lineWidth = Math.max(1, scale * 0.18);
+  ctx.font = `${fs(11.5)}px ${SERIF}`;
+  ctx.strokeStyle = "#c9c4bb"; ctx.lineWidth = Math.max(1, scale * 0.05);
   const dataRows = [["Recibo N° :", String(p.receipt), 75], ["Recibo a: :", String(p.studentName), 83], ["Fecha :", String(p.recordDate), 91]];
-  if (p.coveredMonth) dataRows.push(["Cubre :", monthLabel(p.coveredMonth), 99]);
-  dataRows
-    .forEach(([label, val, y]) => {
-      ctx.fillStyle = "#000000";
-      ctx.fillText(label, X(15), Y(y));
-      ctx.fillText(val, X(42), Y(y));
-      ctx.beginPath(); ctx.moveTo(X(40), Y(y + 1)); ctx.lineTo(X(133), Y(y + 1)); ctx.stroke();
-    });
+  dataRows.forEach(([label, val, y]) => {
+    ctx.fillStyle = "#1f1f1f";
+    ctx.textAlign = "right"; ctx.fillText(label, X(42), Y(y));
+    ctx.textAlign = "left"; ctx.fillText(val, X(45), Y(y));
+    ctx.beginPath(); ctx.moveTo(X(45), Y(y + 1)); ctx.lineTo(X(133), Y(y + 1)); ctx.stroke();
+  });
 
-  // Descripción
-  ctx.fillStyle = "#26292b"; ctx.fillRect(X(15), Y(105), X(30), Y(8));
-  ctx.fillStyle = "#ffffff"; ctx.font = `bold ${fs(11)}px ${SANS}`;
-  ctx.fillText("Descripción:", X(18), Y(110.5));
-  ctx.fillStyle = "#000000"; ctx.font = `${fs(12)}px ${SANS}`;
-  ctx.fillText(`${p.concept} - Deuda total: ${money(p.total)}`, X(15), Y(122));
   if (p.notes) {
-    ctx.fillStyle = "rgb(80,80,80)"; ctx.font = `${fs(9)}px ${SANS}`;
-    ctx.fillText("(Nota: " + p.notes + ")", X(15), Y(128));
+    ctx.font = `italic ${fs(10.5)}px ${SERIF}`;
+    const words = p.notes.split(/\s+/);
+    const allNoteLines = [];
+    let current = "";
+    for (const word of words) {
+      const candidate = current ? current + " " + word : word;
+      if (current && ctx.measureText(candidate).width > X(112)) {
+        allNoteLines.push(current);
+        current = word;
+      } else {
+        current = candidate;
+      }
+    }
+    if (current) allNoteLines.push(current);
+    const noteLines = allNoteLines.slice(0, 4);
+    if (allNoteLines.length > 4) noteLines[noteLines.length - 1] = noteLines[noteLines.length - 1].replace(/\s+\S+$/, "") + " …";
+    const panelBottom = 95 + 6 + noteLines.length * 5 + 3;
+    ctx.fillStyle = "#faf9f7"; ctx.fillRect(X(15), Y(95), X(118), Y(panelBottom - 95));
+    ctx.strokeStyle = "#252321"; ctx.lineWidth = Math.max(1, scale * 0.12);
+    ctx.beginPath(); ctx.moveTo(X(15), Y(95)); ctx.lineTo(X(15), Y(panelBottom)); ctx.stroke();
+    ctx.fillStyle = "#4a453e"; ctx.font = `bold ${fs(10.5)}px ${SERIF}`;
+    ctx.fillText("Observaciones:", X(19), Y(101));
+    ctx.fillStyle = "#1f1f1f"; ctx.font = `italic ${fs(10.5)}px ${SERIF}`;
+    noteLines.forEach((line, i) => ctx.fillText(line, X(19), Y(107 + i * 5)));
   }
-  ctx.strokeStyle = "rgb(120,120,120)";
-  ctx.beginPath(); ctx.moveTo(X(15), Y(132)); ctx.lineTo(X(133), Y(132)); ctx.stroke();
 
-  // Saldo
-  ctx.fillStyle = "#b5b5b5"; ctx.fillRect(X(15), Y(145), X(22), Y(8));
-  ctx.fillStyle = "#000000"; ctx.font = `bold ${fs(11)}px ${SANS}`;
-  ctx.fillText("SALDO:", X(17), Y(150.5));
-  ctx.fillStyle = "rgb(199,25,45)"; ctx.fillText(money(p.balance), X(40), Y(150.5));
-  ctx.strokeStyle = "rgb(120,120,120)";
-  ctx.beginPath(); ctx.moveTo(X(39), Y(152)); ctx.lineTo(X(65), Y(152)); ctx.stroke();
-
-  // Pago total
-  ctx.fillStyle = "#b5b5b5"; ctx.fillRect(X(70), Y(155), X(26), Y(8));
-  ctx.fillStyle = "#000000"; ctx.font = `bold ${fs(11)}px ${SANS}`;
-  ctx.fillText("Pago Total:", X(72), Y(160.5));
-  ctx.fillText(money(p.amount), X(98), Y(160.5));
-  ctx.strokeStyle = "rgb(120,120,120)";
-  ctx.beginPath(); ctx.moveTo(X(98), Y(162)); ctx.lineTo(X(125), Y(162)); ctx.stroke();
+  // Saldo y pago total
+  ctx.fillStyle = "#faf9f7"; ctx.strokeStyle = "#c9c4bb"; ctx.lineWidth = Math.max(1, scale * 0.05);
+  ctx.fillRect(X(15), Y(145), X(52), Y(9)); ctx.strokeRect(X(15), Y(145), X(52), Y(9));
+  ctx.fillRect(X(81), Y(145), X(52), Y(9)); ctx.strokeRect(X(81), Y(145), X(52), Y(9));
+  ctx.font = `bold ${fs(10)}px ${SERIF}`; ctx.fillStyle = "#4a453e";
+  ctx.fillText("SALDO:", X(18), Y(151.5));
+  ctx.fillText("Pago Total:", X(84), Y(151.5));
+  ctx.font = `bold ${fs(13)}px ${SERIF}`;
+  ctx.fillStyle = "#c7192d"; ctx.textAlign = "right"; ctx.fillText(money(p.balance), X(64), Y(151.5));
+  ctx.fillStyle = "#1f1f1f"; ctx.fillText(money(p.amount), X(130), Y(151.5));
+  ctx.textAlign = "left";
 
   // Firma
-  ctx.textAlign = "center"; ctx.fillStyle = "#000000";
-  ctx.font = `italic ${fs(22)}px Georgia, "Times New Roman", serif`;
-  ctx.fillText("G Gavilanez", X(105), Y(182));
-  ctx.strokeStyle = "#000000"; ctx.lineWidth = Math.max(1, scale * 0.18);
-  ctx.beginPath(); ctx.moveTo(X(80), Y(185)); ctx.lineTo(X(130), Y(185)); ctx.stroke();
-  ctx.font = `bold ${fs(10)}px ${SANS}`;
-  ctx.fillText("Lic. Galo Gavilanez", X(105), Y(190));
-  ctx.fillText("Director y Maestro", X(105), Y(195));
+  ctx.textAlign = "center"; ctx.fillStyle = "#1f1f1f";
+  ctx.font = `italic ${fs(20)}px ${SERIF}`;
+  ctx.fillText("G Gavilanez", X(74), Y(178));
+  ctx.strokeStyle = "#1f1f1f"; ctx.lineWidth = Math.max(1, scale * 0.05);
+  ctx.beginPath(); ctx.moveTo(X(59), Y(181)); ctx.lineTo(X(89), Y(181)); ctx.stroke();
+  ctx.font = `${fs(10.5)}px ${SERIF}`;
+  ctx.fillText("Lic. Galo Gavilanez", X(74), Y(187));
+  ctx.fillText("Director y Maestro", X(74), Y(192));
   ctx.textAlign = "left";
 
   // Franja inferior
-  ctx.fillStyle = "#26292b"; ctx.fillRect(0, Y(202), X(148), Y(8));
+  ctx.fillStyle = "#252321"; ctx.fillRect(0, Y(202), X(148), Y(8));
   return canvas;
 }
 
@@ -1339,33 +1468,6 @@ window.deleteReceipt = async function(receiptNum) {
   notice("Comprobante eliminado y saldo restituido correctamente.");
 };
 
-// --- TARIFAS ---
-function fillTariffs() {
-  if ($("tariffNormal")) $("tariffNormal").value = data.tariffs.normal;
-  if ($("tariffLate")) $("tariffLate").value = data.tariffs.late;
-  if ($("tariffMatricula")) $("tariffMatricula").value = data.tariffs.matricula;
-  if ($("tariffImplements")) $("tariffImplements").value = data.tariffs.implements;
-  if ($("tariffUniform")) $("tariffUniform").value = data.tariffs.uniform;
-  if ($("tariffOther")) $("tariffOther").value = data.tariffs.other;
-}
-
-$("tariffForm")?.addEventListener("submit", e => {
-  e.preventDefault();
-  const vals = { normal: $("tariffNormal")?.value, late: $("tariffLate")?.value, matricula: $("tariffMatricula")?.value, implements: $("tariffImplements")?.value, uniform: $("tariffUniform")?.value, other: $("tariffOther")?.value };
-  for (const [k, v] of Object.entries(vals)) { data.tariffs[k] = Number(v); }
-  saveData(); notice("Tarifas guardadas.");
-});
-
-$("resetTariffs")?.addEventListener("click", async () => {
-  const ok = await confirmDialog({
-    title: "Restablecer tarifas",
-    message: "¿Restablecer las tarifas por defecto? Se perderán los valores actuales.",
-    confirmText: "Sí, restablecer",
-    danger: true
-  });
-  if (ok) { data.tariffs = { ...defaultTariffs }; saveData(); fillTariffs(); notice("Tarifas restablecidas."); }
-});
-
 // --- COPIAS DE SEGURIDAD ---
 $("btnExportData")?.addEventListener("click", () => {
   const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(data, null, 2));
@@ -1395,6 +1497,10 @@ $("btnImportData")?.addEventListener("change", e => {
         });
         if (ok) {
           data = importedData;
+          (data.students || []).forEach(s => {
+            if (!s.since) s.since = currentMonthKey();
+            if (!("monthlyPrice" in s)) s.monthlyPrice = null;
+          });
           saveData();
           notice("Datos restaurados.");
           setTimeout(() => location.reload(), 1000);
@@ -1422,7 +1528,11 @@ function renderDashboard() {
   const paid = enrolled.filter(s => hasPaidMonthly(s.id, monthKey));
   const debtors = enrolled.filter(s => !hasPaidMonthly(s.id, monthKey));
   const late = monthIsLate(monthKey);
-  const rate = Number(late ? data.tariffs.late : data.tariffs.normal) || 0;
+  const rateType = late ? "late" : "normal";
+  const rates = [...new Set(enrolled.map(s => studentPrice(s, rateType)))].sort((a, b) => a - b);
+  const rateText = rates.length
+    ? (rates.length === 1 ? money(rates[0]) : `${money(rates[0])} – ${money(rates[rates.length - 1])}`)
+    : money(0);
   const totalDebt = active.reduce((sum, s) => sum + studentDebt(s).total, 0);
 
   if ($("statPendingLabel")) $("statPendingLabel").textContent = "Deuda total por cobrar";
@@ -1467,11 +1577,11 @@ function renderDashboard() {
       const due = monthlyDueDate(today());
       const dueLabel = due.toLocaleDateString("es-EC", { day: "numeric", month: "long" });
       monthlyHint.textContent = late
-        ? `Recargo aplicado: ${money(rate)} por alumno (plazo venció el ${dueLabel}).`
-        : `Sin recargo hasta el ${dueLabel}. Tarifa normal: ${money(rate)}.`;
+        ? `Recargo de ${money(lateSurcharge())} aplicado; plazo venció el ${dueLabel}. Tarifa atrasada: ${rateText}.`
+        : `Sin recargo hasta el ${dueLabel}. Tarifa normal: ${rateText}.`;
     }
-    else if (monthKey > currentMonth) monthlyHint.textContent = `Mes futuro · tarifa: ${money(rate)} por alumno.`;
-    else monthlyHint.textContent = `Mes cerrado · recargo aplicado: ${money(rate)} por alumno.`;
+    else if (monthKey > currentMonth) monthlyHint.textContent = `Mes futuro · tarifa por alumno: ${rateText}.`;
+    else monthlyHint.textContent = `Mes cerrado · tarifa por alumno: ${rateText}.`;
   }
 
   const monthList = $("dashMonthlyList");
