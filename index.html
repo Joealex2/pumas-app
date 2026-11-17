@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Club Los Pumas | Gestión de pagos</title>
-  <link rel="stylesheet" href="./styles.css?v=34">
+  <link rel="stylesheet" href="./styles.css?v=37">
   <link rel="manifest" href="./manifest.json">
   <meta name="theme-color" content="#211e1e">
 </head>
@@ -233,10 +233,6 @@
                 <label>Fecha de recibo *</label>
                 <input type="date" id="recordDate" required>
               </div>
-              <label class="switch-row hidden" id="lateFeeRow" style="grid-column:1/-1; margin:0;">
-                <input type="checkbox" id="lateFeeToggle">
-                <span id="lateFeeLabel">Aplicar recargo por atraso</span>
-              </label>
               <div class="form-group hidden" id="matriculaRow" style="grid-column:1/-1;">
                 <label>Matrícula / inscripción ($)</label>
                 <input type="number" step="0.01" min="0" id="matriculaAmount" value="10">
@@ -253,6 +249,10 @@
 
             <div class="form-group hidden" id="pendingMonthsWrap" style="margin-top:15px;">
               <label>Meses por cancelar</label>
+              <label class="switch-row hidden" id="lateFeeRow" style="margin:0 0 10px;">
+                <input type="checkbox" id="lateFeeToggle">
+                <span id="lateFeeLabel">Aplicar recargo por atraso</span>
+              </label>
               <div id="debtSummary" class="debt-summary"></div>
               <div id="pendingMonthsList" class="months-list"></div>
             </div>
@@ -376,7 +376,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="./app.js?v=34"></script>
+  <script src="./app.js?v=37"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {

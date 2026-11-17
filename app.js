@@ -690,11 +690,6 @@ function renderPendingMonths() {
   wrap.classList.remove("hidden");
 
   const debt = studentDebt(s);
-  if (info) {
-    info.innerHTML = debt.total > 0
-      ? `Deuda estimada: <b style="color:var(--red)">${money(debt.total)}</b> · ${debt.count} mes(es) pendiente(s)`
-      : `<span class="muted">Sin deuda pendiente 🎉</span>`;
-  }
 
   // Si se aceptó la advertencia, se agrega el mes actual aunque ya esté cancelado
   const cm = currentMonthKey();
@@ -707,11 +702,16 @@ function renderPendingMonths() {
   const refDate = $("recordDate")?.value || today();
   const refMonth = String(refDate).slice(0, 7);
   const lateRow = $("lateFeeRow");
-  const refMonthPendingLate = isMonthly && isPastDue(refDate) && months.some(m => m.month === refMonth && !isEnrollmentMonthFree(s, m.month));
+  const anyLatePending = isMonthly && months.some(m => {
+    if (isEnrollmentMonthFree(s, m.month)) return false;
+    if (m.month < refMonth) return true;
+    if (m.month === refMonth) return isPastDue(refDate);
+    return false;
+  });
   if (lateRow) {
-    lateRow.classList.toggle("hidden", !refMonthPendingLate);
-    if (refMonthPendingLate && !lateFeeManuallySet && $("lateFeeToggle")) $("lateFeeToggle").checked = true;
-    if ($("lateFeeLabel")) $("lateFeeLabel").textContent = `Aplicar recargo por atraso (+${money(lateSurcharge())})`;
+    lateRow.classList.toggle("hidden", !anyLatePending);
+    if (anyLatePending && !lateFeeManuallySet && $("lateFeeToggle")) $("lateFeeToggle").checked = true;
+    if ($("lateFeeLabel")) $("lateFeeLabel").textContent = `Aplicar recargo por atraso (+${money(lateSurcharge())} por mes)`;
   }
 
   if (!months.length) {
@@ -731,6 +731,33 @@ function renderPendingMonths() {
   // "Valor total a cobrar" y "Monto que paga hoy" son editables (permite cobros personalizados y pagos parciales)
   if ($("payAmount")) $("payAmount").readOnly = false;
   if ($("payAbono")) $("payAbono").readOnly = false;
+  updateDebtSummary();
+}
+
+function updateDebtSummary() {
+  const info = $("debtSummary");
+  if (!info) return;
+  if (!selectedStudent()) { info.innerHTML = ""; return; }
+  const checks = [...document.querySelectorAll("#pendingMonthsList .month-check")];
+  if (!checks.length) {
+    info.innerHTML = `<span class="muted">Sin mensualidades pendientes.</span>`;
+    return;
+  }
+  const selected = checks.filter(c => c.checked);
+  const monthlyTotal = selected.reduce((sum, c) => sum + (Number(c.dataset.amount) || 0), 0);
+  const lateCount = selected.filter(c => c.closest(".month-item")?.classList.contains("late")).length;
+  const matricula = /matr[ií]cula/i.test($("payConcept")?.value || "") ? (Number($("matriculaAmount")?.value) || 0) : 0;
+  const total = monthlyTotal + matricula;
+  if (!selected.length && !matricula) {
+    info.innerHTML = `<span class="muted">Sin meses seleccionados.</span>`;
+    return;
+  }
+  const detalle = [
+    `${selected.length} mes(es) seleccionado(s)`,
+    lateCount ? `${lateCount} con recargo` : "",
+    matricula ? `${money(matricula)} matrícula` : ""
+  ].filter(Boolean).join(" · ");
+  info.innerHTML = `Deuda estimada: <b style="color:var(--red)">${money(total)}</b> · ${detalle}`;
 }
 
 // Saldo pendiente de un mes en el formulario: permite quitar el recargo del mes del recibo
@@ -743,7 +770,7 @@ function monthChargeForForm(monthKey) {
   const fixedTarget = monthBaseTarget(s.id, monthKey);
   let late;
   if (isEnrollmentMonthFree(s, monthKey)) late = false;
-  else if (monthKey < refMonth) late = true;
+  else if (monthKey < refMonth) late = !waive;
   else if (monthKey === refMonth) late = isPastDue(refDate) && !waive;
   else late = false;
   const adjustedTarget = (fixedTarget != null && late) ? monthTargetWithLate(s, monthKey, fixedTarget) : fixedTarget;
@@ -761,6 +788,7 @@ function recomputeMonthlyAmount() {
   if ($("payAmount")) $("payAmount").value = total.toFixed(2);
   if ($("payAbono")) $("payAbono").value = total.toFixed(2);
   updateBalance();
+  updateDebtSummary();
 }
 
 function updateSuggestedAmount() {
@@ -777,7 +805,7 @@ function updateSuggestedAmount() {
   const isMonthly = /mensualidad/i.test(concept);
   $("matriculaRow")?.classList.toggle("hidden", !/matr[ií]cula/i.test(concept));
   renderPendingMonths();
-  if (isMonthly) recomputeMonthlyAmount(); else recomputeAmount();
+  if (isMonthly) recomputeMonthlyAmount(); else { recomputeAmount(); updateDebtSummary(); }
 }
 
 $("payConcept")?.addEventListener("change", () => warnIfMonthlyPaid());
