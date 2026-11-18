@@ -73,6 +73,12 @@ async function saveData() {
 function money(n) { return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(Number(n) || 0); }
 function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
 
+function receiptTime(iso) {
+  const d = new Date(iso);
+  if (isNaN(d)) return "—";
+  return d.toLocaleTimeString("es-EC", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true });
+}
+
 function parsePrice(value) {
   const v = String(value ?? "").trim();
   if (!v) return null;
@@ -854,6 +860,7 @@ $("paymentForm")?.addEventListener("submit", async e => {
     return;
   }
   const cleanDate = ($("recordDate")?.value || today()).trim();
+  const issuedAt = new Date().toISOString();
   const notes = $("payNotes")?.value.trim() || "";
   const isMonthly = /mensualidad/i.test(concept);
   const created = [];
@@ -890,7 +897,7 @@ $("paymentForm")?.addEventListener("submit", async e => {
       remaining -= pay;
       const obId = `OB-${String(data.nextObligation++).padStart(5, "0")}`;
       data.obligations.push({ id: obId, studentId: s.id, concept, monthlyType: monthChargeForForm(sel.month).late ? "late" : "normal", total: sel.charge, balance: sel.charge - pay, created: cleanDate, coveredMonth: sel.month });
-      const p = { receipt: `LP-${String(data.nextReceipt++).padStart(6, "0")}`, obligationId: obId, studentId: s.id, studentName: `${s.names} ${s.last}`, cedula: s.cedula, concept, coveredMonth: sel.month, recordDate: cleanDate, amount: pay, notes };
+      const p = { receipt: `LP-${String(data.nextReceipt++).padStart(6, "0")}`, obligationId: obId, studentId: s.id, studentName: `${s.names} ${s.last}`, cedula: s.cedula, concept, coveredMonth: sel.month, recordDate: cleanDate, issuedAt, amount: pay, notes };
       data.abonos.push(p); created.push(p);
     });
 
@@ -899,7 +906,7 @@ $("paymentForm")?.addEventListener("submit", async e => {
       remaining -= pay;
       const obId = `OB-${String(data.nextObligation++).padStart(5, "0")}`;
       data.obligations.push({ id: obId, studentId: s.id, concept: "Matrícula", monthlyType: "normal", total: matricula, balance: matricula - pay, created: cleanDate });
-      const p = { receipt: `LP-${String(data.nextReceipt++).padStart(6, "0")}`, obligationId: obId, studentId: s.id, studentName: `${s.names} ${s.last}`, cedula: s.cedula, concept: "Matrícula", recordDate: cleanDate, amount: pay, notes };
+      const p = { receipt: `LP-${String(data.nextReceipt++).padStart(6, "0")}`, obligationId: obId, studentId: s.id, studentName: `${s.names} ${s.last}`, cedula: s.cedula, concept: "Matrícula", recordDate: cleanDate, issuedAt, amount: pay, notes };
       data.abonos.push(p); created.push(p);
     }
 
@@ -909,7 +916,7 @@ $("paymentForm")?.addEventListener("submit", async e => {
     if (!Number.isFinite(total) || total < 0 || !Number.isFinite(abono) || abono < 0) { notice("Valores inválidos.", true); return; }
     const obId = `OB-${String(data.nextObligation++).padStart(5, "0")}`;
     data.obligations.push({ id: obId, studentId: s.id, concept, monthlyType: "normal", total, balance: Math.max(0, total - abono), created: cleanDate });
-    const p = { receipt: `LP-${String(data.nextReceipt++).padStart(6, "0")}`, obligationId: obId, studentId: s.id, studentName: `${s.names} ${s.last}`, cedula: s.cedula, concept, recordDate: cleanDate, amount: abono, notes };
+    const p = { receipt: `LP-${String(data.nextReceipt++).padStart(6, "0")}`, obligationId: obId, studentId: s.id, studentName: `${s.names} ${s.last}`, cedula: s.cedula, concept, recordDate: cleanDate, issuedAt, amount: abono, notes };
     data.abonos.push(p); created.push(p);
   }
 
@@ -1442,7 +1449,7 @@ function renderHistory() {
     if (status === "pending" && p.balance <= 0) return false;
     if (studentFilter !== "all" && p.studentId !== studentFilter) return false;
     return true;
-  }).sort((a, b) => (b.recordDate || "").localeCompare(a.recordDate || ""));
+  }).sort((a, b) => String(b.issuedAt || b.recordDate || "").localeCompare(String(a.issuedAt || a.recordDate || "")) || String(b.receipt || "").localeCompare(String(a.receipt || "")));
 
   if ($("historyCount")) $("historyCount").textContent = arr.length;
   if ($("historyRevenue")) $("historyRevenue").textContent = money(arr.reduce((s, p) => s + p.amount, 0));
@@ -1568,7 +1575,7 @@ function renderDashboard() {
 
   // Actividad reciente: últimos 5 recibos
   const recent = [...(data.abonos || [])]
-    .sort((a, b) => (b.recordDate || "").localeCompare(a.recordDate || "") || String(b.receipt).localeCompare(String(a.receipt)))
+    .sort((a, b) => String(b.issuedAt || b.recordDate || "").localeCompare(String(a.issuedAt || a.recordDate || "")) || String(b.receipt || "").localeCompare(String(a.receipt || "")))
     .slice(0, 5);
   const recentBox = $("dashRecent");
   if (recentBox) {
@@ -1577,7 +1584,7 @@ function renderDashboard() {
       return `<div class="activity-item">
         <div class="activity-main">
           <b>${esc(p.studentName)}</b>
-          <span class="subline">${esc(p.concept)} · ${esc(p.recordDate)} · ${esc(p.receipt)}</span>
+          <span class="subline">${esc(p.concept)} · ${esc(p.recordDate)} · ${esc(receiptTime(p.issuedAt))} · ${esc(p.receipt)}</span>
         </div>
         <div class="activity-amount">
           <span class="amt">${money(p.amount)}</span>
