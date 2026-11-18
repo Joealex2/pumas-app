@@ -1240,3 +1240,69 @@ body.login-active {
   font-size: 15px;
   line-height: 1;
 }
+
+/* ---------- BIRTHDAYS ---------- */
+.birthday-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.birthday-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.birthday-item:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.birthday-item.today {
+  background: #f0fdf4;
+  margin: 0 -12px;
+  padding: 12px;
+  border-radius: 12px;
+  border-bottom: none;
+}
+
+.birthday-main b {
+  display: block;
+  color: var(--dark);
+}
+
+.birthday-group + .birthday-group {
+  margin-top: 6px;
+}
+
+.birthday-month {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 0 6px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.birthday-group:first-child .birthday-month {
+  padding-top: 0;
+}
+
+.birthday-month-count {
+  min-width: 22px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--red-soft);
+  color: var(--red);
+  text-align: center;
+  font-size: 11px;
+  letter-spacing: 0;
+}

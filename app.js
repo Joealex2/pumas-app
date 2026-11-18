@@ -47,6 +47,8 @@ async function loadData() {
       (data.students || []).forEach(s => {
         if (!s.since) { s.since = currentMonthKey(); migrated = true; }
         if (!("monthlyPrice" in s)) { s.monthlyPrice = null; migrated = true; }
+        if (!("birthDate" in s)) { s.birthDate = null; migrated = true; }
+        else { const nb = normalizeBirthDate(s.birthDate); if (nb !== s.birthDate) { s.birthDate = nb; migrated = true; } }
       });
       if (migrated) { try { await docRef.set(data); } catch (e) { console.warn("No se pudo guardar la migración:", e); } }
     } else {
@@ -75,7 +77,7 @@ function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;
 
 function receiptTime(iso) {
   const d = new Date(iso);
-  if (isNaN(d)) return "—";
+  if (isNaN(d)) return "";
   return d.toLocaleTimeString("es-EC", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true });
 }
 
@@ -150,6 +152,27 @@ function monthAdd(key, n) {
   const [y, m] = String(key).split("-").map(Number);
   const d = new Date(y, m - 1 + n, 1);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+// Nombre del mes sin el año (para encabezados de grupo)
+function monthNameOnly(monthKey) {
+  const [y, m] = String(monthKey).split("-").map(Number);
+  const name = new Date(y, m - 1, 1).toLocaleDateString("es-EC", { month: "long" });
+  return name.charAt(0).toUpperCase() + name.slice(1);
+}
+
+// Nombre corto del mes (para la etiqueta del periodo)
+function monthShortName(monthKey) {
+  const [y, m] = String(monthKey).split("-").map(Number);
+  const name = new Date(y, m - 1, 1).toLocaleDateString("es-EC", { month: "short" }).replace(/\.$/, "");
+  return name.charAt(0).toUpperCase() + name.slice(1);
+}
+
+// Primer mes del bimestre al que pertenece una clave "YYYY-MM"
+function bdayPairStart(key) {
+  const [y, m] = String(key || currentMonthKey()).slice(0, 7).split("-").map(Number);
+  const startM = m % 2 === 0 ? m - 1 : m;
+  return `${y}-${String(startM).padStart(2, "0")}`;
 }
 
 // Lista de meses "YYYY-MM" desde `fromKey` hasta `toKey` inclusive
@@ -330,6 +353,36 @@ function updateStudentTypeUI() {
   const isNew = isNewStudentForm();
   if ($("studentStatusRow")) $("studentStatusRow").style.display = isNew ? "none" : "";
   if (isNew && $("studentStatus")) $("studentStatus").value = "Activo";
+  const birth = $("studentBirthDate");
+  const label = $("studentBirthDateLabel");
+  if (birth) birth.required = isNew;
+  if (label) label.textContent = isNew ? "Fecha de nacimiento *" : "Fecha de nacimiento";
+}
+
+function normalizeBirthDate(value) {
+  const v = String(value || "").trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null;
+}
+
+function birthMonthDay(birthDate) {
+  const b = normalizeBirthDate(birthDate);
+  return b ? b.slice(5) : null;
+}
+
+function birthAgeTurning(birthDate, refDate) {
+  const b = normalizeBirthDate(birthDate);
+  if (!b) return null;
+  const year = Number(String(refDate || today()).slice(0, 4));
+  return year - Number(b.slice(0, 4));
+}
+
+function currentAge(birthDate, refDate) {
+  const b = normalizeBirthDate(birthDate);
+  if (!b) return null;
+  const ref = String(refDate || today()).slice(0, 10);
+  let age = Number(ref.slice(0, 4)) - Number(b.slice(0, 4));
+  if (ref.slice(5, 10) < b.slice(5, 10)) age -= 1;
+  return age >= 0 ? age : null;
 }
 
 function resetStudentForm() {
@@ -337,6 +390,7 @@ function resetStudentForm() {
   if ($("studentId")) $("studentId").value = `LP-${String(data.nextStudent || 1).padStart(4, "0")}`;
   if ($("studentFormTitle")) $("studentFormTitle").textContent = "Registro de alumnos";
   if ($("studentTypeNew")) $("studentTypeNew").checked = true;
+  if ($("studentBirthDate")) $("studentBirthDate").value = "";
   updateStudentTypeUI();
   if ($("studentSubmitBtn")) $("studentSubmitBtn").textContent = "Guardar alumno";
   $("studentCancelEditBtn")?.classList.add("hidden");
@@ -346,12 +400,18 @@ function resetStudentForm() {
 
 $("studentCancelEditBtn")?.addEventListener("click", resetStudentForm);
 document.querySelectorAll('input[name="studentType"]').forEach(r => r.addEventListener("change", updateStudentTypeUI));
+updateStudentTypeUI();
 $("studentCedula")?.addEventListener("input", e => e.target.value = e.target.value.replace(/\D/g, "").slice(0, 10));
 
 $("studentForm")?.addEventListener("submit", e => {
   e.preventDefault();
   const cedula = $("studentCedula")?.value.trim();
   if (!/^\d{10}$/.test(cedula)) { notice("La cédula debe tener 10 dígitos.", true); return; }
+
+  const isNew = isNewStudentForm();
+  const birthDate = normalizeBirthDate($("studentBirthDate")?.value);
+  if (isNew && !birthDate) { notice("La fecha de nacimiento es obligatoria para alumnos nuevos.", true); return; }
+  if (birthDate && (birthDate > today() || birthDate < "1900-01-01")) { notice("La fecha de nacimiento no es válida.", true); return; }
 
   if (editingStudentId) {
     const sIndex = data.students.findIndex(s => s.id === editingStudentId);
@@ -363,18 +423,17 @@ $("studentForm")?.addEventListener("submit", e => {
       data.students[sIndex].names = $("studentNames")?.value.trim();
       data.students[sIndex].last = $("studentLast")?.value.trim();
       data.students[sIndex].group = $("studentGroup")?.value;
-      const isNew = isNewStudentForm();
       data.students[sIndex].status = isNew ? "Activo" : $("studentStatus")?.value;
       data.students[sIndex].isNew = isNew;
       if (isNew && !data.students[sIndex].enrollmentExemptMonth) data.students[sIndex].enrollmentExemptMonth = currentMonthKey();
       data.students[sIndex].monthlyPrice = parsePrice($("studentMonthlyPrice")?.value);
+      data.students[sIndex].birthDate = birthDate;
       saveData();
       notice("Alumno actualizado.");
       resetStudentForm();
     }
   } else {
     if (data.students.some(s => s.cedula === cedula)) { notice("Cédula duplicada.", true); return; }
-    const isNew = isNewStudentForm();
     const s = {
       id: `LP-${String(data.nextStudent++).padStart(4, "0")}`,
       cedula,
@@ -385,7 +444,8 @@ $("studentForm")?.addEventListener("submit", e => {
       since: currentMonthKey(),
       isNew,
       ...(isNew ? { enrollmentExemptMonth: currentMonthKey() } : {}),
-      monthlyPrice: parsePrice($("studentMonthlyPrice")?.value)
+      monthlyPrice: parsePrice($("studentMonthlyPrice")?.value),
+      birthDate
     };
     data.students.push(s);
     saveData();
@@ -409,8 +469,9 @@ window.editStudent = function (id) {
   if ($("studentStatus")) $("studentStatus").value = s.status || "Activo";
   if ($("studentTypeNew")) $("studentTypeNew").checked = s.isNew === true;
   if ($("studentTypeOld")) $("studentTypeOld").checked = s.isNew !== true;
-  updateStudentTypeUI();
   if ($("studentMonthlyPrice")) $("studentMonthlyPrice").value = s.monthlyPrice ?? "";
+  if ($("studentBirthDate")) $("studentBirthDate").value = s.birthDate || "";
+  updateStudentTypeUI();
 
   if ($("studentFormTitle")) $("studentFormTitle").textContent = `Editando a: ${s.names} ${s.last}`;
   if ($("studentSubmitBtn")) $("studentSubmitBtn").textContent = "Actualizar";
@@ -461,18 +522,24 @@ function renderStudents() {
 
   if (!arr.length) { $("studentsList").innerHTML = '<div class="empty-state" style="padding:20px;text-align:center;color:var(--muted);">No hay alumnos registrados.</div>'; return; }
 
-  $("studentsList").innerHTML = `<table style="min-width: 720px;"><thead><tr><th>Alumno</th><th>Cédula / ID</th><th>Grupo</th><th>Estado</th><th>Deuda</th><th>Acciones</th></tr></thead><tbody>${arr.map(s => {
+  $("studentsList").innerHTML = `<table style="min-width: 860px;"><thead><tr><th>Alumno</th><th>Cédula / ID</th><th>Grupo</th><th>Estado</th><th>Nacimiento</th><th>Deuda</th><th>Acciones</th></tr></thead><tbody>${arr.map(s => {
     const status = s.status || "Activo";
     const statusBadge = status === "Activo" ? `<span class="badge" style="background:#e6f7ed;color:#177344">Activo</span>` : `<span class="badge" style="background:#fde7e9;color:#a41327">Inactivo</span>`;
     const newBadge = s.isNew ? ` <span class="badge" style="background:#e8f0ff;color:#1e40af">Nuevo</span>` : "";
     const cobrarBtn = status === "Activo" ? `<button class="mini-btn red" style="padding:6px 12px; font-weight:600;" data-pay-for="${s.id}">Cobrar</button> ` : "";
     const debt = studentDebt(s).total;
     const debtCell = debt > 0 ? `<span style="color:var(--red); font-weight:700;">${money(debt)}</span>` : `<span class="muted">—</span>`;
+    const birth = normalizeBirthDate(s.birthDate);
+    const age = currentAge(birth, today());
+    const birthCell = birth
+      ? `${esc(birth)}<span class="subline">${age != null ? age + " años" : "Fecha inválida"}</span>`
+      : `<span class="badge" style="background:#fff7ed;color:#9a3412">Sin fecha</span>`;
     return `<tr>
         <td><b>${esc(s.names)} ${esc(s.last)}</b>${newBadge}</td>
         <td>${esc(s.cedula)}<span class="subline">${esc(s.id)}</span></td>
         <td>${esc(s.group)}</td>
         <td>${statusBadge}</td>
+        <td>${birthCell}</td>
         <td>${debtCell}</td>
         <td>
             <div style="display:flex; gap:6px; flex-wrap:nowrap;">
@@ -485,11 +552,10 @@ function renderStudents() {
 
   document.querySelectorAll("[data-pay-for]").forEach(b => b.addEventListener("click", () => { showView("payment"); selectStudentForPayment(b.dataset.payFor); }));
 }
-
 // --- CARGA MASIVA DE ALUMNOS (CSV) ---
 $("btnDownloadTemplate")?.addEventListener("click", () => {
-  const csvHeader = "cedula,nombres,apellidos,grupo,estado,precio_mensual,nuevo\n";
-  const csvExample = "1727363986,Joe Alexander,Gavilanez Paucar,Jóvenes,Activo,35,si\n1712345678,Matias Josue,Gavilanez Paucar,Niños,Activo,,no";
+  const csvHeader = "cedula,nombres,apellidos,grupo,estado,precio_mensual,nuevo,fecha_nacimiento\n";
+  const csvExample = "1727363986,Joe Alexander,Gavilanez Paucar,Jóvenes,Activo,35,si,2012-05-10\n1712345678,Matias Josue,Gavilanez Paucar,Niños,Activo,,no,2015-08-22";
   const blob = new Blob([csvHeader + csvExample], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -527,6 +593,7 @@ $("btnImportStudentsCSV")?.addEventListener("change", (e) => {
       const status = cols[4] || "Activo";
       const monthlyPrice = parsePrice(cols[5]);
       const isNew = /^(si|sí|1|true)$/i.test(cols[6] || "");
+      const birthDate = normalizeBirthDate(cols[7]);
 
       if (!cedula || !names || !last) continue;
 
@@ -545,7 +612,8 @@ $("btnImportStudentsCSV")?.addEventListener("change", (e) => {
         since: currentMonthKey(),
         isNew,
         ...(isNew ? { enrollmentExemptMonth: currentMonthKey() } : {}),
-        monthlyPrice
+        monthlyPrice,
+        birthDate
       };
 
       data.students.push(newStudent);
@@ -1535,6 +1603,7 @@ $("btnImportData")?.addEventListener("change", e => {
           (data.students || []).forEach(s => {
             if (!s.since) s.since = currentMonthKey();
             if (!("monthlyPrice" in s)) s.monthlyPrice = null;
+            if (!("birthDate" in s)) s.birthDate = null;
           });
           saveData();
           notice("Datos restaurados.");
@@ -1581,10 +1650,12 @@ function renderDashboard() {
   if (recentBox) {
     recentBox.innerHTML = recent.length ? recent.map(a => {
       const p = getJoinedReceipt(a);
+      const meta = [p.concept, p.recordDate, receiptTime(p.issuedAt), p.receipt]
+        .filter(Boolean).map(esc).join(" · ");
       return `<div class="activity-item">
         <div class="activity-main">
           <b>${esc(p.studentName)}</b>
-          <span class="subline">${esc(p.concept)} · ${esc(p.recordDate)} · ${esc(receiptTime(p.issuedAt))} · ${esc(p.receipt)}</span>
+          <span class="subline">${meta}</span>
         </div>
         <div class="activity-amount">
           <span class="amt">${money(p.amount)}</span>
@@ -1639,6 +1710,73 @@ function renderDashboard() {
     }).join("") : `<div class="empty-state">${q ? "Sin resultados para \"" + esc(q) + "\"." : (enrolled.length === 0 ? "Sin alumnos inscritos en este mes." : `¡Todos al día${monthKey === currentMonth ? " este mes" : " en " + monthLabel(monthKey)}! 🎉`)}</div>`;
     monthList.querySelectorAll("[data-pay-for]").forEach(b => b.addEventListener("click", () => { showView("payment"); selectStudentForPayment(b.dataset.payFor); }));
   }
+
+  // Cumpleañeros por bimestre (incluye activos e inactivos)
+  const bList = $("dashBirthdaysList");
+  if (bList) {
+    const now = today();
+    const curMM = now.slice(5, 7);
+    const curMD = now.slice(5, 10);
+    const curYear = now.slice(0, 4);
+    const anchor = dashBdayAnchorKey || bdayPairStart(currentMonthKey());
+    const pairMonths = [anchor, monthAdd(anchor, 1)];
+    const pairLabel = `${monthShortName(pairMonths[0])} – ${monthShortName(pairMonths[1])} ${anchor.slice(0, 4)}`;
+    if ($("dashBdaysLabel")) $("dashBdaysLabel").textContent = pairLabel;
+    const all = data.students || [];
+    const missingBirth = all.filter(s => !normalizeBirthDate(s.birthDate)).length;
+    const monthsMM = pairMonths.map(k => k.slice(5, 7));
+    const birthdays = all.filter(st => {
+      const b = normalizeBirthDate(st.birthDate);
+      return !!b && monthsMM.includes(b.slice(5, 7));
+    })
+      .sort((a, b) => {
+        const da = birthMonthDay(a.birthDate) || "";
+        const db = birthMonthDay(b.birthDate) || "";
+        if (da !== db) return da.localeCompare(db);
+        return `${a.names} ${a.last}`.localeCompare(`${b.names} ${b.last}`, "es");
+      });
+    if ($("dashBirthdaysBadge")) $("dashBirthdaysBadge").textContent = String(birthdays.length);
+    if ($("dashBirthdaysHint")) {
+      if (!birthdays.length) {
+        $("dashBirthdaysHint").textContent = missingBirth
+          ? `No hay cumpleaños en ${pairLabel}. ${missingBirth} alumno(s) sin fecha registrada.`
+          : `No hay cumpleaños en ${pairLabel}.`;
+      } else {
+        $("dashBirthdaysHint").textContent = missingBirth
+          ? `Incluye alumnos activos e inactivos. ${missingBirth} alumno(s) sin fecha registrada.`
+          : "Incluye alumnos activos e inactivos.";
+      }
+    }
+    bList.innerHTML = birthdays.length ? pairMonths.map(monthKey => {
+      const mm = monthKey.slice(5, 7);
+      const group = birthdays.filter(s => normalizeBirthDate(s.birthDate).slice(5, 7) === mm);
+      if (!group.length) return "";
+      const eventYear = Number(monthKey.slice(0, 4));
+      const items = group.map(s => {
+        const b = normalizeBirthDate(s.birthDate);
+        const day = Number(b.slice(8, 10));
+        const isToday = mm === curMM && b.slice(8, 10) === curMD.slice(3) && String(eventYear) === curYear;
+        const age = eventYear - Number(b.slice(0, 4));
+        const status = s.status || "Activo";
+        const inactiveBadge = status === "Inactivo" ? ` <span class="badge" style="background:#fde7e9;color:#a41327">Inactivo</span>` : "";
+        const todayBadge = isToday ? ` <span class="badge" style="background:#dcfce7;color:#166534">Hoy</span>` : "";
+        const ageText = (age >= 0) ? ` · Cumple ${age} años` : "";
+        return `<div class="birthday-item${isToday ? " today" : ""}">
+          <div class="birthday-main">
+            <b>${esc(s.names)} ${esc(s.last)}</b>${todayBadge}${inactiveBadge}
+            <span class="subline">${esc(s.group || "")} · Día ${day}${ageText}</span>
+          </div>
+        </div>`;
+      }).join("");
+      return `<div class="birthday-group">
+        <div class="birthday-month">
+          <span>${esc(monthNameOnly(monthKey))}</span>
+          <span class="birthday-month-count">${group.length}</span>
+        </div>
+        ${items}
+      </div>`;
+    }).join("") : `<div class="empty-state">No hay cumpleaños en ${esc(pairLabel)}.</div>`;
+  }
 }
 
 // Mes seleccionado en el panel de mensualidades (null = mes actual)
@@ -1657,6 +1795,24 @@ $("dashMonthToday")?.addEventListener("click", () => {
   dashMonthKey = null;
   renderDashboard();
   const panel = $("dashMonthlyPanel");
+  if (panel) { panel.classList.remove("month-fade"); void panel.offsetWidth; panel.classList.add("month-fade"); }
+});
+
+// Bimestre seleccionado en el panel de cumpleañeros (null = bimestre actual)
+let dashBdayAnchorKey = null;
+
+function shiftBdayPeriod(dir) {
+  dashBdayAnchorKey = monthAdd(dashBdayAnchorKey || bdayPairStart(currentMonthKey()), dir);
+  renderDashboard();
+  const panel = $("dashBirthdaysPanel");
+  if (panel) { panel.classList.remove("month-fade"); void panel.offsetWidth; panel.classList.add("month-fade"); }
+}
+$("dashBdaysPrev")?.addEventListener("click", () => shiftBdayPeriod(-2));
+$("dashBdaysNext")?.addEventListener("click", () => shiftBdayPeriod(2));
+$("dashBdaysToday")?.addEventListener("click", () => {
+  dashBdayAnchorKey = null;
+  renderDashboard();
+  const panel = $("dashBirthdaysPanel");
   if (panel) { panel.classList.remove("month-fade"); void panel.offsetWidth; panel.classList.add("month-fade"); }
 });
 

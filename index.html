@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Club Los Pumas | Gestión de pagos</title>
-  <link rel="stylesheet" href="./styles.css?v=41">
+  <link rel="stylesheet" href="./styles.css?v=47">
   <link rel="manifest" href="./manifest.json">
   <meta name="theme-color" content="#211e1e">
 </head>
@@ -91,6 +91,21 @@
           </button>
         </div>
 
+        <div class="card" id="dashBirthdaysPanel" style="margin-bottom:20px;">
+          <div class="section-head">
+            <h3>Cumpleañeros</h3>
+            <span class="badge" id="dashBirthdaysBadge" style="background:var(--red-soft);color:var(--red);">0</span>
+          </div>
+          <div class="month-nav">
+            <button type="button" class="month-nav-btn" id="dashBdaysPrev" aria-label="Periodo anterior">‹</button>
+            <span class="month-nav-label" id="dashBdaysLabel">—</span>
+            <button type="button" class="month-nav-btn" id="dashBdaysNext" aria-label="Periodo siguiente">›</button>
+            <button type="button" class="month-nav-today" id="dashBdaysToday">Hoy</button>
+          </div>
+          <p class="subline" id="dashBirthdaysHint" style="margin:0 0 10px;"></p>
+          <div id="dashBirthdaysList" class="birthday-list"></div>
+        </div>
+
         <div class="dash-two-col">
           <div class="card" id="dashMonthlyPanel">
             <div class="section-head">
@@ -116,6 +131,7 @@
             <div id="dashRecent" class="activity-list"></div>
           </div>
         </div>
+
       </section>
 
       <!-- STUDENTS VIEW -->
@@ -167,6 +183,10 @@
                   <option value="Activo">Activo</option>
                   <option value="Inactivo">Inactivo</option>
                 </select>
+              </div>
+              <div class="form-group">
+                <label id="studentBirthDateLabel">Fecha de nacimiento *</label>
+                <input type="date" id="studentBirthDate">
               </div>
               <div class="form-group">
                 <label>Precio mensual ($)</label>
@@ -376,8 +396,8 @@
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="./app.js?v=41"></script>
-  <script>
+  <script src="./app.js?v=47"></script>
+cuand  <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('./sw.js')
