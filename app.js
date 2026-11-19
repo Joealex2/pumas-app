@@ -328,10 +328,63 @@ function showView(name) {
   if (name === "history") renderHistory();
 }
 
-window.addEventListener("DOMContentLoaded", async () => {
-  if (recordDate) recordDate.value = today();
+function getLoginParams() {
+  const p = new URLSearchParams(window.location.search);
+  return { usuario: (p.get("usuario") || "").trim(), password: p.get("password") || "" };
+}
+
+function validLogin(usuario, password) {
+  return usuario === "admin" && password === "1234";
+}
+
+function showLoginError(msg) {
+  const el = $("loginError");
+  if (!el) return;
+  if (msg) { el.textContent = msg; el.classList.remove("hidden"); }
+  else { el.textContent = ""; el.classList.add("hidden"); }
+}
+
+async function grantAppAccess() {
+  showLoginError("");
+  document.body.classList.remove("login-active");
+  $("loginScreen")?.classList.add("hidden");
+  document.querySelector(".app-shell")?.classList.remove("hidden");
+  if ($("recordDate")) $("recordDate").value = today();
   await loadData();
   showView("dashboard");
+}
+
+function initLogin() {
+  const form = $("loginForm");
+  const { usuario, password } = getLoginParams();
+  const hasParams = new URLSearchParams(window.location.search).has("usuario") ||
+    new URLSearchParams(window.location.search).has("password");
+
+  if (hasParams) {
+    if (validLogin(usuario, password)) {
+      grantAppAccess();
+      return;
+    }
+    showLoginError("Usuario o contraseña incorrectos.");
+  }
+
+  if (form) {
+    form.addEventListener("submit", (e) => {
+      const u = ($("usuario")?.value || "").trim();
+      const p = $("password")?.value || "";
+      if (!validLogin(u, p)) {
+        e.preventDefault();
+        showLoginError("Usuario o contraseña incorrectos.");
+      } else {
+        showLoginError("");
+        // Sin preventDefault: se envía GET a ./index.html?usuario=...&password=...
+      }
+    });
+  }
+}
+
+window.addEventListener("DOMContentLoaded", () => {
+  initLogin();
 });
 
 // Al volver a la app (o cambiar el día/mes) refrescar el panel del mes actual

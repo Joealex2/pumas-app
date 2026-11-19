@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pumas-auto-update-v47';
+const CACHE_NAME = 'pumas-auto-update-v48';
 
 self.addEventListener('install', event => {
   self.skipWaiting();
@@ -16,6 +16,14 @@ self.addEventListener('activate', event => {
 // revalida con el servidor para no servir archivos viejos desde la caché.
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
+
+  const url = new URL(event.request.url);
+  const isLoginNav = event.request.mode === 'navigate' &&
+    (url.searchParams.has('usuario') || url.searchParams.has('password'));
+  if (isLoginNav) {
+    event.respondWith(fetch(event.request, { cache: 'no-store' }));
+    return;
+  }
 
   event.respondWith(
     fetch(event.request, { cache: 'no-cache' })
