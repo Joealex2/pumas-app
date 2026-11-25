@@ -17,14 +17,6 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
 
-  const url = new URL(event.request.url);
-  const isLoginNav = event.request.mode === 'navigate' &&
-    (url.searchParams.has('usuario') || url.searchParams.has('password'));
-  if (isLoginNav) {
-    event.respondWith(fetch(event.request, { cache: 'no-store' }));
-    return;
-  }
-
   event.respondWith(
     fetch(event.request, { cache: 'no-cache' })
       .then(networkResponse => {
